@@ -283,7 +283,6 @@ bool NeoGPS::parseField(char chr)
                     before_decimal = true;
                     break;
                 case 6:                  // speed
-uart.putchar(chr);
                     if (chr == '.')
                       before_decimal = false;
                     else if (before_decimal)
@@ -294,9 +293,7 @@ uart.putchar(chr);
                 case 7:                  // heading
                     if (chrCount == 0) {
                       before_decimal = true;
-uart.putchar(' ');
                     }
-uart.putchar(chr);
                     if (chr == '.')
                       before_decimal = false;
                     else if (before_decimal)
@@ -306,9 +303,7 @@ uart.putchar(chr);
                     break;
                 case 8:                 // DDMMYY
                     switch (chrCount) {
-                      case 0: dateTime.date   = (chr - '0')<<4;
-uart.putchar(' ');
-break;
+                      case 0: dateTime.date   = (chr - '0')<<4; break;
                       case 1: dateTime.date  |= (chr - '0');    break;
                       case 2: dateTime.month  = (chr - '0')<<4; break;
                       case 3: dateTime.month |= (chr - '0');    break;
