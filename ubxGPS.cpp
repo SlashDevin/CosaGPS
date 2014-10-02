@@ -2,6 +2,10 @@
 
 #include "Cosa/RTC.hh"
 
+#include <avr/pgmspace.h>
+
+#include "Cosa/Trace.hh"
+
 void ubloxGPS::rxBegin()
 {
   rx_msg.init();
@@ -19,12 +23,10 @@ void ubloxGPS::rxEnd()
             (rx_msg.msg_id    == UBX_ACK_ACK) &&
             (rx_msg.length    == 2)) {
           acked = true;
-        }
-//      else
-//        Event::push( Event::RECEIVE_COMPLETED_TYPE, this, 0 );
+        } else
+          Event::push( Event::RECEIVE_COMPLETED_TYPE, this, UBX_MSG );
     }
 }
-
 
 int ubloxGPS::putchar(char c)
 {
@@ -37,8 +39,9 @@ int ubloxGPS::putchar(char c)
           rxState = (rxState_t) UBX_SYNC2;
         else
           // Delegate
-          return NeoGPS::putchar( c );
+          c = NeoGPS::putchar( c );
         break;
+
 
       case UBX_SYNC2:
           if (chr == SYNC_2) {
@@ -61,10 +64,10 @@ int ubloxGPS::putchar(char c)
               rx_msg.msg_id = (msg_id_t) chr;
               break;
             case 2:
-              rx_msg.length = chr << 8;
+              rx_msg.length = chr;
               break;
             case 3:
-              rx_msg.length += chr;
+              rx_msg.length += chr << 8;
               chrCount = 0;
               rxState = (rxState_t) UBX_RECEIVING_DATA;
               break;
@@ -76,14 +79,13 @@ int ubloxGPS::putchar(char c)
           rx_msg.crc_b += rx_msg.crc_a;
 
           // Except for acks, the payload is not saved
-
           if (rx_msg.msg_class == UBX_ACK) {
             if (chrCount == 0)
               ubx_ack.msg_class = (msg_class_t) chr;
             else if (chrCount == 1)
               ubx_ack.msg_id = (msg_id_t) chr;
           }
-              
+
           if (++chrCount >= rx_msg.length) {
             // payload size received
             rxState = (rxState_t) UBX_CRC_A;
@@ -106,15 +108,22 @@ int ubloxGPS::putchar(char c)
 #ifdef NEOGPS_STATS
             statistics.parser_crcerr++;
 #endif
-          } else
+          } else {
             rxEnd();
+          }
           rxState = (rxState_t) UBX_IDLE;
+          break;
+
+      default:
+          // Delegate
+          c = NeoGPS::putchar( c );
           break;
     }
 
     return c;
 }
 
+#if 0
 static const uint8_t cfg_msg_data[] __PROGMEM =
   { ubloxGPS::UBX_CFG, ubloxGPS::UBX_CFG_MSG,
     sizeof(ubloxGPS::cfg_msg_t), 0,
@@ -123,9 +132,12 @@ static const uint8_t cfg_msg_data[] __PROGMEM =
 static const ubloxGPS::cfg_msg_t *cfg_msg_P =
   (const ubloxGPS::cfg_msg_t *) &cfg_msg_data[0];
 
+    send_P( *cfg_msg_P );
+#endif
+
 bool ubloxGPS::enableNMEA( enum nmea_msg_t msgType, uint8_t rate )
 {
-  static const ubx_nmea_msg_t ubx[] = {
+  static const ubx_nmea_msg_t ubx[] __PROGMEM = {
         UBX_GPGGA,
         UBX_GPGLL,
         UBX_GPGSA,
@@ -135,103 +147,90 @@ bool ubloxGPS::enableNMEA( enum nmea_msg_t msgType, uint8_t rate )
         UBX_GPZDA,
     };
 
-  if ((unsigned int)msgType >= membersof(ubx))
+  uint8_t msg_index = (uint8_t) msgType - (uint8_t) NMEA_FIRST_MSG;
+
+  if (msg_index >= membersof(ubx))
     return false;
 
-
-  send_P( *cfg_msg_P );
-
-  cfg_msg_t cfg_msg( msgType, rate );
+  nmea_msg_t msg = (nmea_msg_t) pgm_read_byte( &ubx[msg_index] );
+  cfg_msg_t cfg_msg( msg, rate );
+trace << PSTR("enableNMEA( ") << ((uint8_t)msg_index) << PSTR(", rate = ") << rate << PSTR(" )\n");
+trace.print( (uint32_t)0, (const void *) &cfg_msg, (size_t)sizeof(cfg_msg), IOStream::hex, 16 );
 
   return send( cfg_msg );
 }
 
 
-bool ubloxGPS::msg_t::send( IOStream::Device *tx ) const
+void ubloxGPS::wait_for_idle() const
 {
-    tx->putchar( SYNC_1 );
-    tx->putchar( SYNC_2 );
-
-    uint8_t crc_a = 0;
-    uint8_t crc_b = 0;
-    send( tx, msg_class, crc_a, crc_b );
-    send( tx, msg_id, crc_a, crc_b );
-    
-    uint16_t l = length;
-    send( tx, l, crc_a, crc_b );
-    send( tx, l >> 8, crc_a, crc_b );
-
-    uint8_t *payload = (uint8_t *)this;
-    payload = &payload[ sizeof(msg_t) ];
-    while (l--)
-      send( tx, *payload++, crc_a, crc_b );
-
-    tx->putchar( crc_a );
-    tx->putchar( crc_b );
-    tx->flush();
-
-    return true;
-}
-
-
-bool ubloxGPS::msg_t::send_P( IOStream::Device *tx ) const
-{
-    tx->putchar( SYNC_1 );
-    tx->putchar( SYNC_2 );
-
-    uint32_t dword = pgm_read_dword( this );
-    uint8_t crc_a = 0;
-    uint8_t crc_b = 0;
-
-    send( tx, (uint8_t) dword, crc_a, crc_b ); // msg_class
-    dword >>= 8;
-    send( tx, (uint8_t) dword, crc_a, crc_b ); // msg_id
-    dword >>= 8;
-    
-    uint16_t l = dword;
-    send( tx, l, crc_a, crc_b );
-    send( tx, l >> 8, crc_a, crc_b );
-
-    uint8_t *payload = (uint8_t *)this;
-    payload = &payload[ sizeof(msg_t) ];
-    while (l > 0) {
-      if (l >= sizeof(dword)) {
-        uint8_t chunk = sizeof(dword);
-        l -= sizeof(dword);
-        dword = pgm_read_dword( payload );
-        while (chunk--) {
-          send( tx, (uint8_t) dword, crc_a, crc_b );
-          dword >>= 8;
-        }
-        payload = &payload[ sizeof(dword) ];
-
-      } else {
-        send( tx, pgm_read_byte( payload++ ), crc_a, crc_b );
-        l--;
-      }
+  for (uint8_t waits=0; waits++ < 8;) {
+    if (receiving()) {
+      Watchdog::delay(16);
     }
-
-    tx->putchar( crc_a );
-    tx->putchar( crc_b );
-    tx->flush();
-
-    return true;
+  }
 }
 
 
 bool ubloxGPS::wait_for_ack()
 {
-    acked = false;
-    
     uint16_t sent = RTC::millis();
 
     do {
-      if (acked)
+      if (acked) {
+trace << PSTR("acked!\n");
         break;
+      }
       Watchdog::delay( 16 );
-    } while (((uint16_t) RTC::millis()) - sent < 500);
+    } while (((uint16_t) RTC::millis()) - sent < 100);
         
     return acked;
+}
+
+void ubloxGPS::write( msg_t & msg )
+{
+  m_device->putchar( SYNC_1 );
+  m_device->putchar( SYNC_2 );
+
+  uint8_t  crc_a = 0;
+  uint8_t  crc_b = 0;
+  uint8_t *ptr   = (uint8_t *) &msg;
+  uint16_t l     = msg.length + sizeof(msg_t);
+  while (l--)
+    write( *ptr++, crc_a, crc_b );
+
+  m_device->putchar( crc_a );
+  m_device->putchar( crc_b );
+}
+
+void ubloxGPS::write_P( const msg_t & msg )
+{
+  m_device->putchar( SYNC_1 );
+  m_device->putchar( SYNC_2 );
+
+  uint8_t  crc_a = 0;
+  uint8_t  crc_b = 0;
+  uint8_t *ptr   = (uint8_t *) &msg;
+  uint16_t l     = msg.length + sizeof(msg_t);
+  uint32_t dword;
+
+  while (l > 0) {
+    if (l >= sizeof(dword)) {
+      l -= sizeof(dword);
+      dword = pgm_read_dword( ptr );
+      for (uint8_t i=sizeof(dword); i--;) {
+        write( (uint8_t) dword, crc_a, crc_b );
+        dword >>= 8;
+      }
+      ptr += sizeof(dword);
+
+    } else {
+      write( pgm_read_byte( ptr++ ), crc_a, crc_b );
+      l--;
+    }
+  }
+
+  m_device->putchar( crc_a );
+  m_device->putchar( crc_b );
 }
 
 /**
@@ -240,60 +239,65 @@ bool ubloxGPS::wait_for_ack()
  */
 bool ubloxGPS::send( msg_t & msg )
 {
-    // make sure we don't interfere with other data
-    for (uint8_t waits=0; waits++ < 3;) {
+    for (uint8_t tries = 0; tries++ < 3;) {
+      write( msg );
+      if (msg.msg_class != UBX_CFG)
+        return true;
 
-      if ((rxState != NMEA_IDLE) || 
-          (rxState != (enum rxState_t) UBX_IDLE)) {
-        // Not sure this is really required.  According
-        //    to "u-blox 6 Receiver Description, Including 
-        //    Protocol Specification", data sent from the
-        //    device is managed at a frame level:
-        //    out-of-date or overflow *frames* are
-        //    discarded.  Need to look into this...
-        Watchdog::delay(16);
+      acked = false;
+      m_device->flush();
 
-      } else {
-        for (uint8_t tries = 0; tries++ < 3;) {
-          if (msg.send( _tx ) &&
-              ((msg.msg_class != UBX_CFG) ||
-               (wait_for_ack() &&
-                (ubx_ack.msg_class == msg.msg_class) &&
-                (ubx_ack.msg_id    == msg.msg_id))))
-            return true;
-        }
-        break;
-      }
+      // Perhaps it would be better to defer
+      //   the ack handling to an Event instead of blocking here, but we
+      //   would still need to know the input buffer is "busy"
+      //   with other frames... the ack may just be last in line.
+      wait_for_idle();
+
+      if (wait_for_ack() &&
+          (ubx_ack.msg_class == msg.msg_class) &&
+          (ubx_ack.msg_id    == msg.msg_id))
+        return true;
     }
 
     return false;
 }
+
 
 bool ubloxGPS::send_P( const msg_t & msg )
 {
-    // make sure we don't interfere with other data
-    for (uint8_t waits=0; waits++ < 3;) {
+    for (uint8_t tries = 0; tries++ < 3;) {
+      write_P( msg );
+      if (msg.msg_class != UBX_CFG)
+        return true;
 
-      if ((rxState != NMEA_IDLE) || 
-          (rxState != (enum rxState_t) UBX_IDLE)) {
-        Watchdog::delay(16);
+      acked = false;
+      m_device->flush();
 
-      } else {
-        for (uint8_t tries = 0; tries++ < 3;) {
-          msg.send_P( _tx );
-          if ((msg.msg_class != UBX_CFG) ||
-              (wait_for_ack() &&
-               (ubx_ack.msg_class == msg.msg_class) &&
-               (ubx_ack.msg_id    == msg.msg_id)))
-            return true;
-        }
-        break;
-      }
+      // Perhaps it would be better to defer
+      //   the ack handling to an Event instead of blocking here, but we
+      //   would still need to know the input buffer is "busy"
+      //   with other frames... the ack may just be last in line.
+      wait_for_idle();
+
+      if (wait_for_ack() &&
+          (ubx_ack.msg_class == msg.msg_class) &&
+          (ubx_ack.msg_id    == msg.msg_id))
+        return true;
     }
 
     return false;
 }
 
+
+bool ubloxGPS::poll( enum msg_class_t msg_class, enum msg_id_t msg_id )
+{
+  msg_t msg( msg_class, msg_id, 0 );
+
+  return send( msg );
+}
+
+
+#if 0
 const ubloxGPS::msg_hdr_t test __PROGMEM =
   { ubloxGPS::UBX_CFG, ubloxGPS::UBX_CFG_RATE };
 
@@ -305,7 +309,6 @@ const uint8_t test2_data[] __PROGMEM =
 const ubloxGPS::msg_t *test2 = (const ubloxGPS::msg_t *) &test2_data[0];
 
 
-#if 0
 // example configuration for stationary application
 
     cfg_nav5_t setNav = {

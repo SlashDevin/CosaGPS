@@ -6,17 +6,8 @@
 class ubloxGPS : public NeoGPS
 {
 public:
-    static const uint8_t SYNC_1 = 0xB5;
-    static const uint8_t SYNC_2 = 0x62;
-
-    enum ubxState_t {
-        UBX_IDLE = NMEA_LAST_STATE+1,
-        UBX_SYNC2,
-        UBX_HEAD,
-        UBX_RECEIVING_DATA,
-        UBX_CRC_A,
-        UBX_CRC_B
-    }  __attribute__((packed));
+    //  on_event will receive this message type in the value arg 
+    static const uint8_t UBX_MSG = NMEA_LAST_MSG+1;
 
     enum msg_class_t
       { UBX_NAV  = 0x01,  // Navigation results
@@ -38,6 +29,7 @@ public:
         UBX_CFG_MSG  = 0x01, // Configure which messages to send
         UBX_CFG_RATE = 0x08, // Configure message rate
         UBX_CFG_NAV5 = 0x24, // Configure navigation engine settings
+        UBX_MON_VER  = 0x04, // Monitor Receiver/Software version
         UBX_ID_UNK   = 0xFF
       }  __attribute__((packed));
 
@@ -50,25 +42,19 @@ public:
         uint16_t length;  // should be sizeof(this)-sizeof(msg+hdr_t)
 #define UBX_LEN (sizeof(*this)-sizeof(msg_t))
 
-        msg_t() { length = 0; };
+        msg_t()
+        {
+          length    = 0;
+        };
         msg_t( enum msg_class_t m, enum msg_id_t i, uint16_t l )
         {
             msg_class = m;
             msg_id    = i;
             length    = l;
         }
-
-        bool send( IOStream::Device *tx ) const;
-        bool send_P( IOStream::Device *tx ) const;
-
-        inline void send( IOStream::Device *tx, uint8_t c, uint8_t crc_a, uint8_t crc_b ) const
-        {
-            tx->putchar( c );
-            crc_a += c;
-            crc_b += crc_a;
-        }
     } __attribute__((packed));
 
+    // Configure rate
     enum time_ref_t {
       UBX_TIME_REF_UTC=0,
       UBX_TIME_REF_GPS=1
@@ -88,6 +74,10 @@ public:
         }
     }  __attribute__((packed));
 
+
+    /**
+      * Configures NMEA message intervals.
+      */
     enum ubx_nmea_msg_t {
         UBX_GPGGA = 0x00,
         UBX_GPGLL = 0x01,
@@ -112,6 +102,9 @@ public:
         };
     } __attribute__((packed));
 
+    bool enableNMEA( enum nmea_msg_t msgType, uint8_t rate );
+
+    //  Navigation Engine Expert Settings
     enum dyn_model_t {
         UBX_DYN_MODEL_PORTABLE   = 0,
         UBX_DYN_MODEL_STATIONARY = 2,
@@ -168,11 +161,7 @@ public:
 
     }  __attribute__((packed));
 
-     /**
-      * Configures NMEA message intervals.
-      * Uses UBX configuration messages and only works on Ublox modules.
-      */
-    bool enableNMEA( enum nmea_msg_t msgType, uint8_t rate );
+#undef UBX_LEN
 
     /**
      * Sends a UBX message and waits for ACK if it is a configuration message.
@@ -180,25 +169,35 @@ public:
     bool send( msg_t & msg );
     bool send_P( const msg_t & msg );
 
-    /**
-     * Identifies the device used to send UBX messages.
-     * @param[in] tx
-     */
-    void sendingDevice(IOStream::Device *tx) {
-        _tx = tx;
-    }
+    //  Request a UBX message.  on_event will receive it later.
+    bool poll( enum msg_class_t, enum msg_id_t );
 
-    ubloxGPS()
-      : _tx( (IOStream::Device *)NULL ),
+
+    ubloxGPS( IOStream::Device *device )
+      : NeoGPS( device ),
         acked( false )
       {};
+    //  on_event can use this to see the received header.
+    //      TODO: save message body where?
+    const struct msg_hdr_t & rx_msg_hdr() const { return rx_msg; };
 
 private:
-    IOStream::Device *_tx;
+    ubloxGPS(); // NO!
 
-    bool wait_for_ack();
+    inline void write
+      ( uint8_t c, uint8_t & crc_a, uint8_t & crc_b ) const
+    {
+        m_device->putchar( c );
+        crc_a += c;
+        crc_b += crc_a;
+    }
+    void write( msg_t & msg );
+    void write_P( const msg_t & msg );
+
     volatile bool acked;
-    struct msg_hdr_t ubx_ack;
+    void wait_for_idle() const;
+    bool wait_for_ack();
+    struct msg_hdr_t ubx_ack; // which message was ACK/NAK'ed
 
     struct rx_msg_t : msg_t
     {
@@ -206,13 +205,30 @@ private:
         uint8_t  crc_b;   // accumulated as packet received
         void init()
         {
+          msg_class = UBX_UNK;
+          msg_id    = UBX_ID_UNK;
           crc_a = 0;
           crc_b = 0;
         }
     };
     struct rx_msg_t rx_msg;
+
     void rxBegin();
     void rxEnd();
+
+    static const uint8_t SYNC_1 = 0xB5;
+    static const uint8_t SYNC_2 = 0x62;
+
+protected:
+    enum ubxState_t {
+        UBX_IDLE  = NMEA_IDLE,
+        UBX_SYNC2 = NMEA_LAST_STATE+1,
+        UBX_HEAD,
+        UBX_RECEIVING_DATA,
+        UBX_CRC_A,
+        UBX_CRC_B
+    }  __attribute__((packed));
+
     int putchar( char c );
 };
 
