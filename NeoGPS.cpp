@@ -58,21 +58,41 @@ void NeoGPS::rxEnd( bool ok )
   if (ok) {
     // mark specific received data as valid   
     switch (nmeaMessage) {
-      case NMEA_RMC: valid.location = true;
-                     valid.dateTime = true;
-                     valid.speed    = true; 
-                     valid.heading  = true; break;
-      case NMEA_GGA: valid.location = true;
-                     valid.dateTime = true; break;
-      case NMEA_ZDA: valid.dateTime = true; break;
-      default: break;
+      case NMEA_RMC:
+        if (stat == GPS_FIX_NONE)
+          ok = false;
+        else {
+          valid.location = true;
+          valid.dateTime = true;
+          valid.speed    = true; 
+          valid.heading  = true;
+        }
+        break;
+      case NMEA_GGA:
+        if (stat == GPS_FIX_NONE)
+          ok = false;
+        else {
+          valid.location = true;
+          valid.dateTime = true;
+        }
+        break;
+      case NMEA_ZDA:
+        if (dateTime.date == 0)
+          ok = false;
+        else
+          valid.dateTime = true;
+        break;
+      default:
+        break;
     }
+  }
 
 #ifdef NEOGPS_STATS
     statistics.parser_ok++;
 #endif
+
+  if (ok)
     Event::push( Event::RECEIVE_COMPLETED_TYPE, this, nmeaMessage );
-  }
 }
 
 
@@ -92,12 +112,9 @@ int NeoGPS::putchar( char c )
             
             if (c == ',') {   // comma marks end of command name
 
-                if (nmeaMessage != NMEA_UNKNOWN) {
-                    rxState = NMEA_RECEIVING_DATA;
-                    fieldIndex = 0;
-                    chrCount = 0;
-                } else            // unused/invalid command
-                    rxState = NMEA_IDLE;
+                rxState = NMEA_RECEIVING_DATA;
+                fieldIndex = 0;
+                chrCount = 0;
                 
             } else if ((c < 'A') || ('Z' < c)) {
                 // abort command parsing on invalid character
@@ -115,25 +132,42 @@ int NeoGPS::putchar( char c )
                     rxState = NMEA_IDLE;
                   break;
                 case 2:
-                  if      (c == 'G') nmeaMessage = NMEA_GGA;
+                  if      (c == 'G') ; // ok but several choices
                   else if (c == 'Z') nmeaMessage = NMEA_ZDA;
                   else if (c == 'R') nmeaMessage = NMEA_RMC;
+                  else if (c == 'V') nmeaMessage = NMEA_VTG;
                   else
                     rxState = NMEA_IDLE;
                   break;
                 case 3:
-                  if (((c == 'G') && (nmeaMessage == NMEA_GGA)) ||
-                      ((c == 'D') && (nmeaMessage == NMEA_ZDA)) ||
-                      ((c == 'M') && (nmeaMessage == NMEA_RMC)))
+                  if (((c == 'D') && (nmeaMessage == NMEA_ZDA)) ||
+                      ((c == 'M') && (nmeaMessage == NMEA_RMC)) ||
+                      ((c == 'T') && (nmeaMessage == NMEA_VTG))
+                     )
                     ; // ok so far...
-                  else
+                  else if (nmeaMessage == NMEA_UNKNOWN) {
+                    if (c == 'G')
+                      nmeaMessage = NMEA_GGA;
+                    else if (c == 'S')
+                      nmeaMessage = NMEA_GSA;
+                    else if (c == 'L')
+                      nmeaMessage = NMEA_GLL;
+                    else
+                      rxState = NMEA_IDLE;
+                  } else
                     rxState = NMEA_IDLE;
                   break;
                 case 4:
-                  if (((c == 'A') && (nmeaMessage == NMEA_GGA)) ||
-                      ((c == 'A') && (nmeaMessage == NMEA_ZDA)) ||
-                      ((c == 'C') && (nmeaMessage == NMEA_RMC)))
+                  if (((c == 'A') &&
+                       ((nmeaMessage == NMEA_GGA) ||
+                        (nmeaMessage == NMEA_GSA) ||
+                        (nmeaMessage == NMEA_ZDA)))             ||
+                      ((c == 'C') && (nmeaMessage == NMEA_RMC)) ||
+                      ((c == 'L') && (nmeaMessage == NMEA_GLL)) ||
+                      ((c == 'G') && (nmeaMessage == NMEA_VTG)))
                     ; // ok so far, comma better be next...
+                  else if ((c == 'V') && (nmeaMessage == NMEA_GSA))
+                    nmeaMessage = NMEA_GSV; // not GSA after all
                   else
                     rxState = NMEA_IDLE;
                   break;
@@ -248,6 +282,11 @@ bool NeoGPS::parseField(char chr)
             }
             break;
 
+        case NMEA_GLL:
+        case NMEA_GSA:
+        case NMEA_GSV:
+            break;
+                  
         case NMEA_RMC:
             switch (fieldIndex) {
                 case 0:                  // Time  HHMMSS.ss
@@ -327,18 +366,20 @@ bool NeoGPS::parseField(char chr)
                     break;
             }
             break;
-                  
+
+        case NMEA_VTG:
+          break;
 
         case NMEA_ZDA:
             switch (fieldIndex) {
                 case 0:                         // Time  HHMMSS.ss
                     ok = parseTimeField(chr);
-                    dateTime.day   = 0;
+                    dateTime.date  = 0;
                     dateTime.month = 0;
                     dateTime.year  = 0;
                     break;
-                case 1:                         // Day
-                    dateTime.day   = (dateTime.day  <<4) | (chr - '0');
+                case 1:                         // Date
+                    dateTime.date  = (dateTime.date <<4) | (chr - '0');
                     break;
                 case 2:                         // Month
                     dateTime.month = (dateTime.month<<4) | (chr - '0');
@@ -376,4 +417,36 @@ inline bool NeoGPS::parseTimeField(char chr)
   }
 
   return false;
+}
+
+static char toHexDigit( uint8_t val )
+{
+  val &= 0x0F;
+  return (val >= 10) ? ((val - 10) + 'A') : (val + '0');
+}
+
+void NeoGPS::send( const char *msg )
+{
+  if (msg && *msg) {
+    m_device->putchar('$');
+    if (*msg == '$')
+      msg++;
+
+    uint8_t sendCRC = 0;
+    while (*msg) {
+      sendCRC ^= *msg;
+      m_device->putchar( *msg++ );
+    }
+
+    m_device->putchar('*');
+
+    char hexDigit = toHexDigit( sendCRC>>4 );
+    m_device->putchar( hexDigit );
+
+    hexDigit = toHexDigit( sendCRC );
+    m_device->putchar( hexDigit );
+
+    m_device->putchar( CR );
+    m_device->putchar( LF );
+  }
 }
