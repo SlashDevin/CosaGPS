@@ -69,10 +69,9 @@ public:
     volatile uint16_t speed_frac;   // BCD knots * 1000
     uint16_t get_speed() const
     {
-      uint8_t  *valBCD = (uint8_t *) const_cast<uint16_t *>( &speed_frac );
       uint16_t  val    =
-        ((uint16_t)to_binary( valBCD[1] ))*100 +
-        ((uint16_t)to_binary( valBCD[0] ));
+        ((uint16_t)to_binary( speed_frac>>8 ))*100 +
+        ((uint16_t)to_binary( speed_frac ));
       return ((uint16_t)to_binary(speed))*1000 + val;
     };
     
@@ -80,10 +79,9 @@ public:
     volatile uint8_t  heading_frac; // BCD degrees * 100
     uint16_t get_heading() const
     {
-      uint8_t  *valBCD = (uint8_t *) const_cast<uint16_t *>( &heading );
       uint16_t  val    =
-        ((uint16_t)to_binary( valBCD[1] ))*100 +
-        ((uint16_t)to_binary( valBCD[0] ));
+        ((uint16_t)to_binary( heading>>8 ))*100 +
+        ((uint16_t)to_binary( heading ));
       return val*100 + ((uint16_t)to_binary(heading_frac));
     };
 
@@ -110,6 +108,7 @@ public:
 
     /** NMEA message types. */
     enum nmea_msg_t {
+        NMEA_UNKNOWN,
         NMEA_GGA,
         NMEA_GLL,
         NMEA_GSA,
@@ -117,20 +116,25 @@ public:
         NMEA_RMC,
         NMEA_VTG,
         NMEA_ZDA,
-        NMEA_UNKNOWN = 0x7F
     } __attribute__((packed));
+    static const nmea_msg_t NMEA_FIRST_MSG = NMEA_GGA;
+    static const nmea_msg_t NMEA_LAST_MSG  = NMEA_ZDA;
     
     /**
      * Constructor
      */
-    NeoGPS()
+    NeoGPS( IOStream::Device *device = (IOStream::Device *) NULL )
     {
+      m_device = device;
       valid.all = 0;
       nmeaMessage = NMEA_UNKNOWN;
       rxState = NMEA_IDLE;
     };
 
+    void send( const char *msg ); // '$' is optional, and '*' and CS added
 protected:
+    IOStream::Device *m_device;
+
     /**
      * Written to by UART driver as soon as a new char is received.
      * Called inside Irq handler.
@@ -149,6 +153,12 @@ protected:
     };
     volatile rxState_t rxState;
     static const uint8_t NMEA_LAST_STATE = NMEA_RECEIVING_CRC2;
+
+    bool receiving() const
+    {
+      return (rxState != NMEA_IDLE) || (m_device && m_device->available());
+    }
+              
 
     /*
      * Current internal parser state
