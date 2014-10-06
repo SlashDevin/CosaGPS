@@ -28,10 +28,8 @@
  * GPS Parser for NEO-6 Modules.
  *
  * @section Limitations
- * Very limited support for NMEA and UBX messages.
- * Only NMEA messages of types ZDA and GGA are parsed.
- * UBX interface only allows basic configuration and 
- * does not check CRC on Acknowledge messages.
+ * Very limited support for NMEA messages.
+ * Only NMEA messages of types GGA, GLL, RMC, VTG, ZDA are parsed.
  */
 
 class NeoGPS : public IOStream::Device, public Event::Handler
@@ -44,7 +42,6 @@ public:
     struct Location {
         int32_t               lat; // degree * 1e6, negative is South
         int32_t               lon; // degree * 1e6, negative is West
-        uint16_t              alt;
     } __attribute__((packed));
 
     enum gps_fix_status_t {
@@ -67,22 +64,30 @@ public:
 
     volatile uint8_t  speed;        // BCD knots
     volatile uint16_t speed_frac;   // BCD knots * 1000
-    uint16_t get_speed() const
+    uint16_t get_speed() const      // knots * 1000
     {
-      uint16_t  val    =
-        ((uint16_t)to_binary( speed_frac>>8 ))*100 +
-        ((uint16_t)to_binary( speed_frac ));
-      return ((uint16_t)to_binary(speed))*1000 + val;
+      uint16_t  frac =
+        ((uint16_t)to_binary(speed_frac>>8))*100 +
+        ((uint16_t)to_binary(speed_frac));
+      return ((uint16_t)to_binary(speed))*1000 + frac;
     };
     
-    volatile uint16_t heading;      // BCD degrees
-    volatile uint8_t  heading_frac; // BCD degrees * 100
-    uint16_t get_heading() const
+    volatile uint16_t heading;      // BCD degrees * 10
+    uint16_t get_heading() const    // degrees * 10
     {
-      uint16_t  val    =
+      return
         ((uint16_t)to_binary( heading>>8 ))*100 +
         ((uint16_t)to_binary( heading ));
-      return val*100 + ((uint16_t)to_binary(heading_frac));
+    };
+
+    volatile uint16_t alt;         // BCD meters
+    volatile uint8_t  alt_frac;    // BCD meters * 100
+    uint16_t get_altitude() const  // meters * 100
+    {
+      uint16_t  val    =
+        ((uint16_t)to_binary( alt>>8 ))*100 +
+        ((uint16_t)to_binary( alt ));
+      return val*100 + ((uint16_t)to_binary(alt_frac));
     };
 
     volatile union {
@@ -90,6 +95,7 @@ public:
       struct {
         bool dateTime:1;
         bool location:1;
+        bool altitude:1;
         bool speed:1;
         bool heading:1;
       } __attribute__((packed));
@@ -131,7 +137,11 @@ public:
       rxState = NMEA_IDLE;
     };
 
-    void send( const char *msg ); // '$' is optional, and '*' and CS added
+    void poll( nmea_msg_t msg ) const;
+    
+    void send( const char *msg ) const; // '$' is optional, and '*' and CS added
+    void send_P( const char *msg ) const; // '$' is optional, and '*' and CS added
+
 protected:
     IOStream::Device *m_device;
 
@@ -178,6 +188,11 @@ private:
     bool parseField(char chr);
     uint8_t fieldIndex;     // index of currently receiving field
     bool parseTimeField(char chr);
+    bool parseFixMode( char chr );
+    bool parseFixStatus( char chr );
+    void parseSpeed( char chr );
+    void parseHeading( char chr );
+    void parseAltitude( char chr );
 
     // parse lat/lon dddmm.mmmm fields
 
@@ -208,6 +223,8 @@ private:
       val = (val+3)/6;
     }
 
+    bool send_header( const char * & msg ) const;
+    void send_trailer( uint8_t crc ) const;
 };
 
 #endif

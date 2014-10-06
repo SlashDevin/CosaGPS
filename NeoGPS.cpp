@@ -39,6 +39,34 @@ inline static uint8_t parseHEX(char a) {
         return a - '0';
 }
 
+static void end_frac( volatile uint8_t & val )
+{
+  if (val == 0xFF)
+    val = 0;      // no digits
+  else if ((val & 0xF0) == 0xF0)
+    val <<= 4;    // only one significant digit
+  else if ((val & 0x0F) == 0x0F)
+    val &= ~0x0F; // last digit 0
+}
+
+static void end_frac( volatile uint16_t & val )
+{
+  const uint16_t mask = 0xF000;
+
+  // shift significant digits to the top (over any BCD 0xF's),
+  //    shifting zeros in the least significant digits
+  while ((val & mask) == mask)
+    val <<= 4;
+}
+
+static void zero_append( volatile uint16_t & val )
+{
+  uint16_t mask = 0x000F;
+  while (mask && ((val & mask) == mask)) {
+    val &= ~mask;
+    mask <<= 4;
+  }
+}
 
 void NeoGPS::rxBegin()
 {
@@ -62,13 +90,27 @@ void NeoGPS::rxEnd( bool ok )
         if (stat == GPS_FIX_NONE)
           ok = false;
         else {
+          end_frac( speed_frac );
+          zero_append( heading );
           valid.location = true;
           valid.dateTime = true;
           valid.speed    = true; 
           valid.heading  = true;
         }
         break;
+
       case NMEA_GGA:
+        if (stat == GPS_FIX_NONE)
+          ok = false;
+        else {
+          end_frac( alt_frac );
+          valid.altitude = true;
+          valid.location = true;
+          valid.dateTime = true;
+        }
+        break;
+
+      case NMEA_GLL:
         if (stat == GPS_FIX_NONE)
           ok = false;
         else {
@@ -76,6 +118,18 @@ void NeoGPS::rxEnd( bool ok )
           valid.dateTime = true;
         }
         break;
+
+      case NMEA_VTG:
+        if (stat == GPS_FIX_NONE)
+          ok = false;
+        else {
+          end_frac( speed_frac );
+          zero_append( heading );
+          valid.speed    = true; 
+          valid.heading  = true;
+        }
+        break;
+
       case NMEA_ZDA:
         if (dateTime.date == 0)
           ok = false;
@@ -263,7 +317,6 @@ bool NeoGPS::parseField(char chr)
                     stat   = (enum gps_fix_status_t) (chr - '0');
                     satCnt = 0;
                     hdop   = 0;
-                    location.alt    = 0;
                     break;
                 case 6:                 // number of satellites
                     satCnt = satCnt*10 + (chr - '0');
@@ -273,8 +326,7 @@ bool NeoGPS::parseField(char chr)
                       hdop = hdop*10 + (chr - '0');
                     break;
                 case 8:                 // Altitude
-                    if (chr != '.')
-                      location.alt = location.alt*10 + (chr - '0');
+                    parseAltitude( chr );
                     break;
                 default:
                     ok = false;
@@ -283,6 +335,35 @@ bool NeoGPS::parseField(char chr)
             break;
 
         case NMEA_GLL:
+            switch (fieldIndex) {
+                case 0:                 // latitude
+                    parseDDMM( location.lat, chr );
+                    break;
+                case 1:                 // N/S indicator
+                    endDDMM( location.lat );
+                    if (chr == 'S')
+                      location.lat = -location.lat;
+                    break;
+                case 2:                 // longitude
+                    parseDDMM( location.lon, chr );
+                    break;
+                case 3:                 // E/W indicator
+                    endDDMM( location.lon );
+                    if (chr == 'W')
+                      location.lon = -location.lon;
+                    break;
+                case 4:                 // Time  HHMMSS.ss
+                    ok = parseTimeField(chr);
+                    break;
+                case 5:
+                    ok = parseFixStatus( chr );
+                    break;
+                case 6:                // fix mode
+                    ok = parseFixMode( chr );
+                    break;
+            }
+            break;
+
         case NMEA_GSA:
         case NMEA_GSV:
             break;
@@ -293,12 +374,7 @@ bool NeoGPS::parseField(char chr)
                     ok = parseTimeField(chr);
                     break;
                 case 1:
-                    if (chr == 'A')
-                      stat = GPS_FIX_STD;
-                    else if (chr == 'V')
-                      stat = GPS_FIX_NONE;
-                    else
-                      ok = false;
+                    ok = parseFixStatus( chr );
                     break;
                 case 2:                   // latitude
                     parseDDMM( location.lat, chr );
@@ -315,30 +391,12 @@ bool NeoGPS::parseField(char chr)
                     endDDMM( location.lon );
                     if (chr == 'W')
                       location.lon = -location.lon;
-                    speed        = 0;
-                    speed_frac   = 0;
-                    heading      = 0;
-                    heading_frac = 0;
-                    before_decimal = true;
                     break;
                 case 6:                  // speed
-                    if (chr == '.')
-                      before_decimal = false;
-                    else if (before_decimal)
-                      speed = (speed<<4) | (chr - '0');
-                    else
-                      speed_frac = (speed_frac<<4) | (chr - '0');
+                    parseSpeed( chr );
                     break;
                 case 7:                  // heading
-                    if (chrCount == 0) {
-                      before_decimal = true;
-                    }
-                    if (chr == '.')
-                      before_decimal = false;
-                    else if (before_decimal)
-                      heading = (heading<<4) | (chr - '0');
-                    else
-                      heading_frac = (heading_frac<<4) | (chr - '0');
+                    parseHeading( chr );
                     break;
                 case 8:                 // DDMMYY
                     switch (chrCount) {
@@ -352,14 +410,7 @@ bool NeoGPS::parseField(char chr)
                     }
                     break;
                 case 9:                // fix mode
-                    if (chr == 'A')
-                      stat = GPS_FIX_STD;
-                    else if (chr == 'D')
-                      stat = GPS_FIX_DGPS;
-                    else if (chr == 'N')
-                      stat = GPS_FIX_NONE;
-                    else
-                      ok = false;
+                    ok = parseFixMode( chr );
                     break;
                 default:
                     ok = false;
@@ -368,7 +419,36 @@ bool NeoGPS::parseField(char chr)
             break;
 
         case NMEA_VTG:
-          break;
+            switch (fieldIndex) {
+                case 0:
+                    parseHeading( chr );
+                    break;
+                case 1:
+                    ok = (chr == 'T');
+                    break;
+                case 3:
+                    // don't care about magnetic heading
+                    break;
+                case 4:
+                    ok = (chr == 'M');
+                    break;
+                case 5:
+                    parseSpeed( chr );
+                    break;
+                case 6:
+                    ok = (chr == 'N');
+                    break;
+                case 7:
+                    // don't care about speed in kph
+                    break;
+                case 8:
+                    ok = (chr == 'K');
+                    break;
+                case 9:                // fix mode
+                    ok = parseFixMode( chr );
+                    break;
+            }
+            break;
 
         case NMEA_ZDA:
             switch (fieldIndex) {
@@ -419,34 +499,174 @@ inline bool NeoGPS::parseTimeField(char chr)
   return false;
 }
 
+bool NeoGPS::parseFixMode( char chr )
+{
+  bool ok = true;
+
+  if (chr == 'A')
+    stat = GPS_FIX_STD;
+  else if (chr == 'N')
+    stat = GPS_FIX_NONE;
+  else if (chr == 'D')
+    stat = GPS_FIX_DGPS;
+  else if (chr == 'E')
+    stat = GPS_FIX_EST;
+  else
+    ok = false;
+
+  return ok;
+}
+
+bool NeoGPS::parseFixStatus( char chr )
+{
+  bool ok = true;
+
+  if (chr == 'A')
+    stat = GPS_FIX_STD;
+  else if (chr == 'V')
+    stat = GPS_FIX_NONE;
+  else
+    ok = false;
+
+  return ok;
+}
+
+void NeoGPS::parseSpeed( char chr )
+{
+  if (chrCount == 0) {
+    speed        = 0;
+    speed_frac   = 0xFFFF;
+    before_decimal = true;
+  }
+  if (chr == '.')
+    before_decimal = false;
+  else if (before_decimal) {
+    if (chrCount < 2)
+      speed = (speed<<4) | (chr - '0');
+    else // too many chars!
+      speed = 0x99;
+  } else if ((speed_frac & 0xF000) == 0xF000)
+    // only keep the first 4 digits after the decimal
+    speed_frac = (speed_frac<<4) | (chr - '0');
+}
+
+void NeoGPS::parseHeading( char chr )
+{
+  if (chrCount == 0) {
+    heading      = 0;
+    before_decimal = true;
+  }
+  if (chr == '.') {
+    before_decimal = false;
+    heading = (heading<<4) | 0x0F;
+  } else if (before_decimal) {
+    if (chrCount < 3)
+      heading = (heading<<4) | (chr - '0');
+    else // too many chars!
+      heading = 0;
+  } else if ((((uint8_t)heading) & 0x0F) == 0x0F) {
+    // only keep the first digit after the decimal
+    heading &= 0xFFF0;
+    heading |= (chr - '0');
+  }
+}
+
+void NeoGPS::parseAltitude( char chr )
+{
+  if (chrCount == 0) {
+    alt      = 0;
+    alt_frac = 0xFF;
+    before_decimal = true;
+  }
+  if (chr == '.')
+    before_decimal = false;
+  else if (before_decimal) {
+    if (chrCount < 4)
+      alt = (alt<<4) | (chr - '0');
+    else // too many chars!
+      alt = 0x9999;
+  } else if ((alt_frac & 0xF0) == 0xF0)
+    // only keep the first two digits after the decimal
+    alt_frac = (alt_frac<<4) | (chr - '0');
+}
+
+
+void NeoGPS::poll( nmea_msg_t msg ) const
+{
+  static const char pm0[] __PROGMEM = "EIGPQ,GGA";
+  static const char pm1[] __PROGMEM = "EIGPQ,GLL";
+  static const char pm2[] __PROGMEM = "EIGPQ,GSA";
+  static const char pm3[] __PROGMEM = "EIGPQ,GSV";
+  static const char pm4[] __PROGMEM = "EIGPQ,RMC";
+  static const char pm5[] __PROGMEM = "EIGPQ,VTG";
+  static const char pm6[] __PROGMEM = "EIGPQ,ZDA";
+  static const char * const poll_msgs[] __PROGMEM = { pm0, pm1, pm2, pm3, pm4, pm5, pm6 };
+
+  if ((NMEA_FIRST_MSG <= msg) && (msg <= NMEA_LAST_MSG))
+    send_P( (const char *) pgm_read_word(&poll_msgs[msg-NMEA_FIRST_MSG]) );
+}
+
+
 static char toHexDigit( uint8_t val )
 {
   val &= 0x0F;
   return (val >= 10) ? ((val - 10) + 'A') : (val + '0');
 }
 
-void NeoGPS::send( const char *msg )
+
+bool NeoGPS::send_header( const char * & msg ) const
 {
   if (msg && *msg) {
     m_device->putchar('$');
     if (*msg == '$')
       msg++;
+    return true;
+  }
+  return false;
+}
 
-    uint8_t sendCRC = 0;
+
+void NeoGPS::send_trailer( uint8_t crc ) const
+{
+  m_device->putchar('*');
+
+  char hexDigit = toHexDigit( crc>>4 );
+  m_device->putchar( hexDigit );
+
+  hexDigit = toHexDigit( crc );
+  m_device->putchar( hexDigit );
+
+  m_device->putchar( CR );
+  m_device->putchar( LF );
+}
+
+
+void NeoGPS::send( const char *msg ) const
+{
+  if (send_header( msg )) {
+    uint8_t crc = 0;
     while (*msg) {
-      sendCRC ^= *msg;
+      crc ^= *msg;
       m_device->putchar( *msg++ );
     }
 
-    m_device->putchar('*');
+    send_trailer( crc );
+  }
+}
 
-    char hexDigit = toHexDigit( sendCRC>>4 );
-    m_device->putchar( hexDigit );
+void NeoGPS::send_P( const char *msg ) const
+{
+  if (send_header( msg )) {
+    uint8_t crc = 0;
+    for(;;) {
+      uint8_t chr = pgm_read_byte(msg);
+      if (!chr)
+        break;
+      crc ^= chr;
+      m_device->putchar( chr );
+      msg++;
+    }
 
-    hexDigit = toHexDigit( sendCRC );
-    m_device->putchar( hexDigit );
-
-    m_device->putchar( CR );
-    m_device->putchar( LF );
+    send_trailer( crc );
   }
 }
