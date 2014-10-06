@@ -3,6 +3,8 @@
 
 #include "NeoGPS.h"
 
+#include <avr/pgmspace.h>
+
 class ubloxGPS : public NeoGPS
 {
 public:
@@ -34,8 +36,10 @@ public:
       }  __attribute__((packed));
 
     struct msg_hdr_t {
-        enum msg_class_t msg_class:8;
-        enum msg_id_t    msg_id:8;
+        enum msg_class_t msg_class;
+        enum msg_id_t    msg_id;
+        bool same_kind( const msg_hdr_t & msg ) const
+          { return (msg_class == msg.msg_class) && (msg_id == msg.msg_id); }
     }  __attribute__((packed));
 
     struct msg_t : msg_hdr_t {
@@ -53,6 +57,12 @@ public:
             length    = l;
         }
     } __attribute__((packed));
+
+    struct cfg_ack_t : msg_t {
+      struct msg_hdr_t sent_msg; // which message was ACK/NAK'ed
+
+      cfg_ack_t() : msg_t( UBX_ACK, UBX_ACK_NAK, UBX_LEN ) {};
+    };
 
     // Configure rate
     enum time_ref_t {
@@ -164,22 +174,93 @@ public:
 #undef UBX_LEN
 
     /**
-     * Sends a UBX message and waits for ACK if it is a configuration message.
+     * Send a message (non-blocking).
+     *    If /reply_msg/ is provided, /reply_msg/ will be filled out 
+     *    by the same kind of /msg/ if and when it is received asynchronously.
+     *    Although multiple /send_request/s can be issued, and they
+     *    may cause multiple dispatches to /on_event/, only the *last*
+     *    /send_request/ will have its /reply_msg/ filled out.
      */
-    bool send( msg_t & msg );
-    bool send_P( const msg_t & msg );
+    bool send_request
+      ( const msg_t & msg, msg_t *reply_msg = (msg_t *) NULL )
+    {
+      reply( reply_msg );
+      write( msg );
+      return true;
+    };
+    bool send_request_P
+      ( const msg_t & msg, msg_t *reply_msg = (msg_t *) NULL )
+    {
+      reply( reply_msg );
+      write_P( msg );
+      return true;
+    };
 
-    //  Request a UBX message.  on_event will receive it later.
-    bool poll( enum msg_class_t, enum msg_id_t );
+    /**
+     * Send a message and wait for a reply (blocking).
+     *    If /reply_msg/ is provided, it will be filled out by the reply.
+     *    If /reply_msg/ is NULL and /msg/ is a UBX_CFG,
+     *       this will wait for a UBX_CFG_ACK/NAK and return true if ACKed.
+     *    If /reply_msg/ is NULL and /msg/ is *not* a UBX_CFG,
+     *       this will wait for the same kind of /msg/.
+     */
+    bool send
+      ( const msg_t & msg, msg_t *reply_msg = (msg_t *) NULL );
+    bool send_P
+      ( const msg_t & msg, msg_t *reply_msg = (msg_t *) NULL );
+
+    //  Ask for a specific UBX message (non-blocking).
+    //     /on_event/ will receive the header later.
+    //  See also /send_request/.
+    bool poll_request
+      ( const msg_t & msg, msg_t *reply_msg = (msg_t *) NULL )
+    {
+      msg_t poll_msg( msg.msg_class, msg.msg_id, 0 );
+      return send_request( poll_msg, reply_msg );
+    };
+    bool poll_request_P
+      ( const msg_t & msg, msg_t *reply_msg = (msg_t *) NULL )
+    {
+      msg_t poll_msg( (msg_class_t) pgm_read_byte( &msg.msg_class ),
+                      (msg_id_t) pgm_read_byte( &msg.msg_id ), 0 );
+      return send_request( poll_msg, reply_msg );
+    };
+
+    //  Ask for a specific UBX message and wait for it (blocking).
+    //      /msg/ will be filled out by the received message.
+    bool poll( msg_t & msg )
+    {
+      msg_t poll_msg( msg.msg_class, msg.msg_id, 0 );
+      return send( poll_msg, &msg );
+    };
+    bool poll( const msg_t & msg, msg_t *reply_msg )
+    {
+      msg_t poll_msg( msg.msg_class, msg.msg_id, 0 );
+      return send( poll_msg, reply_msg );
+    }
+    bool poll_P( const msg_t & msg, msg_t *reply_msg )
+    {
+      msg_t poll_msg( (msg_class_t) pgm_read_byte( &msg.msg_class ),
+                      (msg_id_t) pgm_read_byte( &msg.msg_id ), 0 );
+      return send( poll_msg, reply_msg );
+    }
 
 
     ubloxGPS( IOStream::Device *device )
-      : NeoGPS( device ),
-        acked( false )
+      : NeoGPS( device )
       {};
-    //  on_event can use this to see the received header.
-    //      TODO: save message body where?
-    const struct msg_hdr_t & rx_msg_hdr() const { return rx_msg; };
+
+    //  /on_event/ can use this to see the received msg class, id and length.
+    volatile const msg_t & rx_msg() const { return m_rx_msg; };
+
+    //  When a message like /reply/ is received, its contents will
+    //    be stored (space permitting) in /reply/.
+    //  After the message is received, the m_reply pointer is set to NULL;
+    //    only the *first* /reply/ contents are stored.
+    //  The /send/ and /poll/ methods may replace m_reply.
+    void reply( msg_t *msg )
+      { m_rx_msg.reply = msg;
+        m_rx_msg.reply_received = false; };
 
 private:
     ubloxGPS(); // NO!
@@ -190,28 +271,46 @@ private:
         m_device->putchar( c );
         crc_a += c;
         crc_b += crc_a;
-    }
-    void write( msg_t & msg );
-    void write_P( const msg_t & msg );
+    };
+    void write( const msg_t & msg ) const;
+    void write_P( const msg_t & msg ) const;
 
-    volatile bool acked;
     void wait_for_idle() const;
-    bool wait_for_ack();
-    struct msg_hdr_t ubx_ack; // which message was ACK/NAK'ed
+    bool wait_for_reply();
 
     struct rx_msg_t : msg_t
     {
         uint8_t  crc_a;   // accumulated as packet received
         uint8_t  crc_b;   // accumulated as packet received
-        void init()
+        msg_t   *reply;   // caller-supplied struct to hold a received msg
+        bool     save_in_reply:1;
+        bool     reply_received:1;
+        rx_msg_t()
+        {
+          init();
+          reply = (msg_t *) NULL;
+          reply_received = false;
+        }
+
+        void init() volatile
         {
           msg_class = UBX_UNK;
           msg_id    = UBX_ID_UNK;
           crc_a = 0;
           crc_b = 0;
+          save_in_reply  = false;
         }
+
+        void start_save() volatile
+        {
+          save_in_reply =
+            reply &&
+            ((reply->msg_class == UBX_ACK) ||
+             (const_cast<rx_msg_t *>(this))->same_kind( *reply ));
+        }
+
     };
-    struct rx_msg_t rx_msg;
+    volatile rx_msg_t m_rx_msg;
 
     void rxBegin();
     void rxEnd();

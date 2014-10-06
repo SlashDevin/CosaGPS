@@ -2,29 +2,25 @@
 
 #include "Cosa/RTC.hh"
 
-#include <avr/pgmspace.h>
-
-#include "Cosa/Trace.hh"
-
 void ubloxGPS::rxBegin()
 {
-  rx_msg.init();
+  m_rx_msg.init();
   chrCount = 0;
 }
 
 void ubloxGPS::rxEnd()
 {
-    if (rx_msg.msg_class != UBX_UNK) {
+    if (m_rx_msg.msg_class != UBX_UNK) {
 
 #ifdef NEOGPS_STATS
         statistics.parser_ok++;
 #endif
-        if ((rx_msg.msg_class == UBX_ACK) &&
-            (rx_msg.msg_id    == UBX_ACK_ACK) &&
-            (rx_msg.length    == 2)) {
-          acked = true;
-        } else
-          Event::push( Event::RECEIVE_COMPLETED_TYPE, this, UBX_MSG );
+      if (m_rx_msg.save_in_reply) {
+        m_rx_msg.save_in_reply  = false;
+        m_rx_msg.reply_received = true;
+        m_rx_msg.reply          = (msg_t *) NULL;
+      }
+      Event::push( Event::RECEIVE_COMPLETED_TYPE, this, UBX_MSG );
     }
 }
 
@@ -53,48 +49,45 @@ int ubloxGPS::putchar(char c)
           break;
           
       case UBX_HEAD:
-          rx_msg.crc_a += chr;
-          rx_msg.crc_b += rx_msg.crc_a;
+          m_rx_msg.crc_a += chr;
+          m_rx_msg.crc_b += m_rx_msg.crc_a;
 
           switch (chrCount++) {
             case 0:
-              rx_msg.msg_class = (msg_class_t) chr;
+              m_rx_msg.msg_class = (msg_class_t) chr;
               break;
             case 1:
-              rx_msg.msg_id = (msg_id_t) chr;
+              m_rx_msg.msg_id = (msg_id_t) chr;
               break;
             case 2:
-              rx_msg.length = chr;
+              m_rx_msg.length = chr;
               break;
             case 3:
-              rx_msg.length += chr << 8;
+              m_rx_msg.length += chr << 8;
               chrCount = 0;
               rxState = (rxState_t) UBX_RECEIVING_DATA;
+              m_rx_msg.start_save();
               break;
           }
           break;
           
         case UBX_RECEIVING_DATA:
-          rx_msg.crc_a += chr;
-          rx_msg.crc_b += rx_msg.crc_a;
+          m_rx_msg.crc_a += chr;
+          m_rx_msg.crc_b += m_rx_msg.crc_a;
 
-          // Except for acks, the payload is not saved
-          if (rx_msg.msg_class == UBX_ACK) {
-            if (chrCount == 0)
-              ubx_ack.msg_class = (msg_class_t) chr;
-            else if (chrCount == 1)
-              ubx_ack.msg_id = (msg_id_t) chr;
-          }
+          if (m_rx_msg.save_in_reply &&
+              (chrCount < m_rx_msg.reply->length))
+            ((uint8_t *)m_rx_msg.reply)[ chrCount+sizeof(msg_hdr_t) ] = chr;
 
-          if (++chrCount >= rx_msg.length) {
+          if (++chrCount >= m_rx_msg.length) {
             // payload size received
             rxState = (rxState_t) UBX_CRC_A;
           }
           break;
 
       case UBX_CRC_A:
-          if (chr != rx_msg.crc_a) {
-            rx_msg.msg_class = UBX_UNK;
+          if (chr != m_rx_msg.crc_a) {
+            m_rx_msg.msg_class = UBX_UNK;
 #ifdef NEOGPS_STATS
             statistics.parser_crcerr++;
 #endif
@@ -103,8 +96,8 @@ int ubloxGPS::putchar(char c)
           break;
 
       case UBX_CRC_B:
-          if (chr != rx_msg.crc_b) {
-            rx_msg.msg_class = UBX_UNK;
+          if (chr != m_rx_msg.crc_b) {
+            m_rx_msg.msg_class = UBX_UNK;
 #ifdef NEOGPS_STATS
             statistics.parser_crcerr++;
 #endif
@@ -122,18 +115,6 @@ int ubloxGPS::putchar(char c)
 
     return c;
 }
-
-#if 0
-static const uint8_t cfg_msg_data[] __PROGMEM =
-  { ubloxGPS::UBX_CFG, ubloxGPS::UBX_CFG_MSG,
-    sizeof(ubloxGPS::cfg_msg_t), 0,
-    ubloxGPS::UBX_NMEA, NeoGPS::NMEA_VTG, 0 };
-  
-static const ubloxGPS::cfg_msg_t *cfg_msg_P =
-  (const ubloxGPS::cfg_msg_t *) &cfg_msg_data[0];
-
-    send_P( *cfg_msg_P );
-#endif
 
 bool ubloxGPS::enableNMEA( enum nmea_msg_t msgType, uint8_t rate )
 {
@@ -154,8 +135,6 @@ bool ubloxGPS::enableNMEA( enum nmea_msg_t msgType, uint8_t rate )
 
   nmea_msg_t msg = (nmea_msg_t) pgm_read_byte( &ubx[msg_index] );
   cfg_msg_t cfg_msg( msg, rate );
-trace << PSTR("enableNMEA( ") << ((uint8_t)msg_index) << PSTR(", rate = ") << rate << PSTR(" )\n");
-trace.print( (uint32_t)0, (const void *) &cfg_msg, (size_t)sizeof(cfg_msg), IOStream::hex, 16 );
 
   return send( cfg_msg );
 }
@@ -163,7 +142,8 @@ trace.print( (uint32_t)0, (const void *) &cfg_msg, (size_t)sizeof(cfg_msg), IOSt
 
 void ubloxGPS::wait_for_idle() const
 {
-  for (uint8_t waits=0; waits++ < 8;) {
+  m_device->flush();
+  for (uint8_t waits=0; (!m_rx_msg.reply_received) && waits++ < 8;) {
     if (receiving()) {
       Watchdog::delay(16);
     }
@@ -171,22 +151,21 @@ void ubloxGPS::wait_for_idle() const
 }
 
 
-bool ubloxGPS::wait_for_ack()
+bool ubloxGPS::wait_for_reply()
 {
     uint16_t sent = RTC::millis();
 
     do {
-      if (acked) {
-trace << PSTR("acked!\n");
-        break;
+      if (m_rx_msg.reply_received) {
+        return true;
       }
       Watchdog::delay( 16 );
     } while (((uint16_t) RTC::millis()) - sent < 100);
         
-    return acked;
+    return false;
 }
 
-void ubloxGPS::write( msg_t & msg )
+void ubloxGPS::write( const msg_t & msg ) const
 {
   m_device->putchar( SYNC_1 );
   m_device->putchar( SYNC_2 );
@@ -202,7 +181,7 @@ void ubloxGPS::write( msg_t & msg )
   m_device->putchar( crc_b );
 }
 
-void ubloxGPS::write_P( const msg_t & msg )
+void ubloxGPS::write_P( const msg_t & msg ) const
 {
   m_device->putchar( SYNC_1 );
   m_device->putchar( SYNC_2 );
@@ -235,69 +214,56 @@ void ubloxGPS::write_P( const msg_t & msg )
 
 /**
  * send( msg_t & msg )
- * Sends UBX command and waits for the ack.
+ * Sends UBX command and optionally waits for the ack.
  */
-bool ubloxGPS::send( msg_t & msg )
+
+bool ubloxGPS::send( const msg_t & msg, msg_t *reply_msg )
 {
-    for (uint8_t tries = 0; tries++ < 3;) {
-      write( msg );
-      if (msg.msg_class != UBX_CFG)
-        return true;
+  cfg_ack_t local_reply;
 
-      acked = false;
-      m_device->flush();
-
-      // Perhaps it would be better to defer
-      //   the ack handling to an Event instead of blocking here, but we
-      //   would still need to know the input buffer is "busy"
-      //   with other frames... the ack may just be last in line.
-      wait_for_idle();
-
-      if (wait_for_ack() &&
-          (ubx_ack.msg_class == msg.msg_class) &&
-          (ubx_ack.msg_id    == msg.msg_id))
-        return true;
+  if (reply_msg)
+    reply( reply_msg );
+  else {
+    if (msg.msg_class != UBX_CFG) {
+      local_reply.msg_class = msg.msg_class;
+      local_reply.msg_id    = msg.msg_id;
+      local_reply.length    = 0;
     }
+    reply( &local_reply );
+  }
 
-    return false;
+  write( msg );
+
+  // When the input buffer is emptied, we'll check 
+  // to see if the reply was received.
+  wait_for_idle();
+
+  if (wait_for_reply())
+    return (msg.msg_class != UBX_CFG) || (local_reply.msg_id == UBX_ACK_ACK);
+
+  reply( (msg_t *) NULL );
+
+  return false;
 }
 
 
-bool ubloxGPS::send_P( const msg_t & msg )
+bool ubloxGPS::send_P( const msg_t & msg, msg_t *reply_msg )
 {
-    for (uint8_t tries = 0; tries++ < 3;) {
-      write_P( msg );
-      if (msg.msg_class != UBX_CFG)
-        return true;
-
-      acked = false;
-      m_device->flush();
-
-      // Perhaps it would be better to defer
-      //   the ack handling to an Event instead of blocking here, but we
-      //   would still need to know the input buffer is "busy"
-      //   with other frames... the ack may just be last in line.
-      wait_for_idle();
-
-      if (wait_for_ack() &&
-          (ubx_ack.msg_class == msg.msg_class) &&
-          (ubx_ack.msg_id    == msg.msg_id))
-        return true;
-    }
-
     return false;
-}
-
-
-bool ubloxGPS::poll( enum msg_class_t msg_class, enum msg_id_t msg_id )
-{
-  msg_t msg( msg_class, msg_id, 0 );
-
-  return send( msg );
 }
 
 
 #if 0
+static const uint8_t cfg_msg_data[] __PROGMEM =
+  { ubloxGPS::UBX_CFG, ubloxGPS::UBX_CFG_MSG,
+    sizeof(ubloxGPS::cfg_msg_t), 0,
+    ubloxGPS::UBX_NMEA, NeoGPS::NMEA_VTG, 0 };
+  
+static const ubloxGPS::cfg_msg_t *cfg_msg_P =
+  (const ubloxGPS::cfg_msg_t *) &cfg_msg_data[0];
+
+    send_P( *cfg_msg_P );
+
 const ubloxGPS::msg_hdr_t test __PROGMEM =
   { ubloxGPS::UBX_CFG, ubloxGPS::UBX_CFG_RATE };
 
