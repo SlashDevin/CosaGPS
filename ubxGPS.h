@@ -8,6 +8,14 @@
 class ubloxGPS : public NeoGPS
 {
 public:
+    ubloxGPS( IOStream::Device *device )
+      : NeoGPS( device ),
+        reply( (msg_t *) NULL ),
+        storage( (msg_t *) NULL ),
+        reply_expected( false ),
+        ack_expected( false )
+      {};
+
     //  on_event will receive this message type in the value arg 
     static const uint8_t UBX_MSG = NMEA_LAST_MSG+1;
 
@@ -26,19 +34,20 @@ public:
 
     enum msg_id_t
       {
-        UBX_ACK_NAK  = 0x00, // Reply to CFG messages
-        UBX_ACK_ACK  = 0x01, // Reply to CFG messages
-        UBX_CFG_MSG  = 0x01, // Configure which messages to send
-        UBX_CFG_RATE = 0x08, // Configure message rate
-        UBX_CFG_NAV5 = 0x24, // Configure navigation engine settings
-        UBX_MON_VER  = 0x04, // Monitor Receiver/Software version
+        UBX_ACK_NAK    = 0x00, // Reply to CFG messages
+        UBX_ACK_ACK    = 0x01, // Reply to CFG messages
+        UBX_CFG_MSG    = 0x01, // Configure which messages to send
+        UBX_CFG_RATE   = 0x08, // Configure message rate
+        UBX_CFG_NAV5   = 0x24, // Configure navigation engine settings
+        UBX_MON_VER    = 0x04, // Monitor Receiver/Software version
+        UBX_NAV_POSLLH = 0x02, // Current Position
         UBX_ID_UNK   = 0xFF
       }  __attribute__((packed));
 
     struct msg_hdr_t {
         enum msg_class_t msg_class;
         enum msg_id_t    msg_id;
-        bool same_kind( const msg_hdr_t & msg ) const
+        bool same_kind( const msg_hdr_t & msg ) const volatile
           { return (msg_class == msg.msg_class) && (msg_id == msg.msg_id); }
     }  __attribute__((packed));
 
@@ -58,11 +67,6 @@ public:
         }
     } __attribute__((packed));
 
-    struct cfg_ack_t : msg_t {
-      struct msg_hdr_t sent_msg; // which message was ACK/NAK'ed
-
-      cfg_ack_t() : msg_t( UBX_ACK, UBX_ACK_NAK, UBX_LEN ) {};
-    };
 
     // Configure rate
     enum time_ref_t {
@@ -86,7 +90,7 @@ public:
 
 
     /**
-      * Configures NMEA message intervals.
+      * Configures message intervals.
       */
     enum ubx_nmea_msg_t {
         UBX_GPGGA = 0x00,
@@ -99,20 +103,23 @@ public:
     } __attribute__((packed));
 
     struct cfg_msg_t : msg_t {
-        msg_class_t  cfg_msg_class; // usually UBX_NMEA
+        msg_class_t  cfg_msg_class;
         uint8_t      cfg_msg;
         uint8_t      rate;
 
-        cfg_msg_t( enum nmea_msg_t m, uint8_t r )
+        cfg_msg_t( msg_class_t m, uint8_t i, uint8_t r )
           : msg_t( UBX_CFG, UBX_CFG_MSG, UBX_LEN )
         {
-          cfg_msg_class = UBX_NMEA;
-          cfg_msg       = m;
+          cfg_msg_class = m;
+          cfg_msg       = i;
           rate          = r;
         };
     } __attribute__((packed));
 
-    bool enableNMEA( enum nmea_msg_t msgType, uint8_t rate );
+    bool configNMEA( enum nmea_msg_t msg, uint8_t rate );
+    bool config_msg_rate( msg_class_t msg_class, msg_id_t msg_id, uint8_t rate )
+      { return send( cfg_msg_t( msg_class, msg_id, rate ) ); }
+
 
     //  Navigation Engine Expert Settings
     enum dyn_model_t {
@@ -148,10 +155,10 @@ public:
         union {
           struct parameter_mask_t apply;
           uint16_t                apply_word;
-        };
+        } __attribute__((packed));
                 
-        enum dyn_model_t       dyn_model;
-        enum position_fix_t    fix_mode;
+        enum dyn_model_t       dyn_model:8;
+        enum position_fix_t    fix_mode:8;
         int32_t                fixed_alt;          // m MSL x0.01
         uint32_t               fixed_alt_variance; // m^2 x0.0001
         int8_t                 min_elev;           // deg
@@ -167,7 +174,12 @@ public:
         uint32_t always_zero_3;
 
         cfg_nav5_t() : msg_t( UBX_CFG, UBX_CFG_NAV5, UBX_LEN )
-          { apply_word = 0xFF00; }
+          {
+            apply_word = 0xFF00;
+            always_zero_1 =
+            always_zero_2 =
+            always_zero_3 = 0;
+          }
 
     }  __attribute__((packed));
 
@@ -175,92 +187,57 @@ public:
 
     /**
      * Send a message (non-blocking).
-     *    If /reply_msg/ is provided, /reply_msg/ will be filled out 
-     *    by the same kind of /msg/ if and when it is received asynchronously.
-     *    Although multiple /send_request/s can be issued, and they
-     *    may cause multiple dispatches to /on_event/, only the *last*
-     *    /send_request/ will have its /reply_msg/ filled out.
+     *    Although multiple /send_request/s can be issued,
+     *      replies will cause multiple dispatches to /on_event/
      */
-    bool send_request
-      ( const msg_t & msg, msg_t *reply_msg = (msg_t *) NULL )
+    bool send_request( const msg_t & msg )
     {
-      reply( reply_msg );
       write( msg );
       return true;
     };
-    bool send_request_P
-      ( const msg_t & msg, msg_t *reply_msg = (msg_t *) NULL )
+    bool send_request_P( const msg_t & msg )
     {
-      reply( reply_msg );
       write_P( msg );
       return true;
     };
 
     /**
      * Send a message and wait for a reply (blocking).
-     *    If /reply_msg/ is provided, it will be filled out by the reply.
-     *    If /reply_msg/ is NULL and /msg/ is a UBX_CFG,
-     *       this will wait for a UBX_CFG_ACK/NAK and return true if ACKed.
-     *    If /reply_msg/ is NULL and /msg/ is *not* a UBX_CFG,
-     *       this will wait for the same kind of /msg/.
+     *    If /msg/ is a UBX_CFG, this will wait for a UBX_CFG_ACK/NAK
+     *      and return true if ACKed.
+     *    If /msg/ is a poll, this will wait for the reply.
+     *    If /msg/ is neither, this will return true immediately.
+     *    If /msg/ is both, this will wait for both the reply and the ACK/NAK.
      */
-    bool send
-      ( const msg_t & msg, msg_t *reply_msg = (msg_t *) NULL );
-    bool send_P
-      ( const msg_t & msg, msg_t *reply_msg = (msg_t *) NULL );
+    bool send( const msg_t & msg, msg_t *reply_msg = (msg_t *) NULL );
+    bool send_P( const msg_t & msg, msg_t *reply_msg = (msg_t *) NULL );
 
     //  Ask for a specific UBX message (non-blocking).
     //     /on_event/ will receive the header later.
     //  See also /send_request/.
-    bool poll_request
-      ( const msg_t & msg, msg_t *reply_msg = (msg_t *) NULL )
+    bool poll_request( const msg_t & msg )
     {
       msg_t poll_msg( msg.msg_class, msg.msg_id, 0 );
-      return send_request( poll_msg, reply_msg );
+      return send_request( poll_msg );
     };
-    bool poll_request_P
-      ( const msg_t & msg, msg_t *reply_msg = (msg_t *) NULL )
+    bool poll_request_P( const msg_t & msg )
     {
       msg_t poll_msg( (msg_class_t) pgm_read_byte( &msg.msg_class ),
                       (msg_id_t) pgm_read_byte( &msg.msg_id ), 0 );
-      return send_request( poll_msg, reply_msg );
+      return send_request( poll_msg );
     };
 
-    //  Ask for a specific UBX message and wait for it (blocking).
-    //      /msg/ will be filled out by the received message.
     bool poll( msg_t & msg )
     {
       msg_t poll_msg( msg.msg_class, msg.msg_id, 0 );
       return send( poll_msg, &msg );
     };
-    bool poll( const msg_t & msg, msg_t *reply_msg )
-    {
-      msg_t poll_msg( msg.msg_class, msg.msg_id, 0 );
-      return send( poll_msg, reply_msg );
-    }
-    bool poll_P( const msg_t & msg, msg_t *reply_msg )
+    bool poll_P( const msg_t & msg, msg_t *reply_msg = (msg_t *) NULL )
     {
       msg_t poll_msg( (msg_class_t) pgm_read_byte( &msg.msg_class ),
                       (msg_id_t) pgm_read_byte( &msg.msg_id ), 0 );
       return send( poll_msg, reply_msg );
-    }
-
-
-    ubloxGPS( IOStream::Device *device )
-      : NeoGPS( device )
-      {};
-
-    //  /on_event/ can use this to see the received msg class, id and length.
-    volatile const msg_t & rx_msg() const { return m_rx_msg; };
-
-    //  When a message like /reply/ is received, its contents will
-    //    be stored (space permitting) in /reply/.
-    //  After the message is received, the m_reply pointer is set to NULL;
-    //    only the *first* /reply/ contents are stored.
-    //  The /send/ and /poll/ methods may replace m_reply.
-    void reply( msg_t *msg )
-      { m_rx_msg.reply = msg;
-        m_rx_msg.reply_received = false; };
+    };
 
 private:
     ubloxGPS(); // NO!
@@ -272,45 +249,62 @@ private:
         crc_a += c;
         crc_b += crc_a;
     };
-    void write( const msg_t & msg ) const;
-    void write_P( const msg_t & msg ) const;
+    void write( const msg_t & msg );
+    void write_P( const msg_t & msg );
 
     void wait_for_idle() const;
-    bool wait_for_reply();
+    bool wait_for_ack();
+    bool waiting() const
+    {
+      return (ack_expected && (!ack_received && !nak_received)) ||
+             (reply_expected && !reply_received);
+    }
+
+
+    // Derived class should override this if the contents of a
+    //   particular message need to be saved.
+    // This executes in an interrupt context, so be quick!
+    //  NOTE: the msg_t part will get stepped on, so you may need to
+    //  reset the length field before the next /send/ if you are using a union.
+    virtual msg_t *storage_for( volatile const msg_t & rx_msg )
+      { return (msg_t *)NULL; };
+
+    // Storage for a specific received message.
+    //   Used internally by send & poll variants.
+    //   Checked and used before /storage_for/ is called.
+    msg_t   *reply;
+
+    msg_t   *storage;   // cached ptr to hold a received msg.
+
+    bool     reply_expected:1;
+    bool     reply_received:1;
+    bool     ack_expected:1;
+    bool     ack_received:1;
+    bool     nak_received:1;
+    bool     ack_same_as_sent:1;
+    struct msg_hdr_t sent;
 
     struct rx_msg_t : msg_t
     {
-        uint8_t  crc_a;   // accumulated as packet received
-        uint8_t  crc_b;   // accumulated as packet received
-        msg_t   *reply;   // caller-supplied struct to hold a received msg
-        bool     save_in_reply:1;
-        bool     reply_received:1;
-        rx_msg_t()
-        {
-          init();
-          reply = (msg_t *) NULL;
-          reply_received = false;
-        }
+      uint8_t  crc_a;   // accumulated as packet received
+      uint8_t  crc_b;   // accumulated as packet received
 
-        void init() volatile
-        {
-          msg_class = UBX_UNK;
-          msg_id    = UBX_ID_UNK;
-          crc_a = 0;
-          crc_b = 0;
-          save_in_reply  = false;
-        }
+      rx_msg_t()
+      {
+        init();
+      }
 
-        void start_save() volatile
-        {
-          save_in_reply =
-            reply &&
-            ((reply->msg_class == UBX_ACK) ||
-             (const_cast<rx_msg_t *>(this))->same_kind( *reply ));
-        }
+      void init() volatile
+      {
+        msg_class = UBX_UNK;
+        msg_id    = UBX_ID_UNK;
+        crc_a = 0;
+        crc_b = 0;
+      }
 
     };
     volatile rx_msg_t m_rx_msg;
+    volatile rx_msg_t & rx() { return m_rx_msg; }
 
     void rxBegin();
     void rxEnd();

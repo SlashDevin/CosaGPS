@@ -4,24 +4,48 @@
 
 void ubloxGPS::rxBegin()
 {
-  m_rx_msg.init();
+  rx().init();
+  storage = (msg_t *) NULL;
   chrCount = 0;
 }
 
 void ubloxGPS::rxEnd()
 {
-    if (m_rx_msg.msg_class != UBX_UNK) {
+  if (rx().msg_class == UBX_ACK) {
+
+    if (ack_expected && ack_same_as_sent) {
+      if (rx().msg_id == UBX_ACK_ACK)
+        ack_received = true;
+      else if (rx().msg_id == UBX_ACK_NAK)
+        nak_received = true;
+      ack_expected = false;
+    }
+
+  } else if (rx().msg_class != UBX_UNK) {
 
 #ifdef NEOGPS_STATS
         statistics.parser_ok++;
 #endif
-      if (m_rx_msg.save_in_reply) {
-        m_rx_msg.save_in_reply  = false;
-        m_rx_msg.reply_received = true;
-        m_rx_msg.reply          = (msg_t *) NULL;
+    bool event = true;
+    if (storage) {
+      if (reply_expected && (storage == reply)) {
+        reply_expected = false;
+        reply_received = true;
+        reply = (msg_t *) NULL;
+        event = false;
+      } else {
+        storage->msg_class = rx().msg_class;
+        storage->msg_id    = rx().msg_id;
+        storage->length    = rx().length;
       }
-      Event::push( Event::RECEIVE_COMPLETED_TYPE, this, UBX_MSG );
+      storage = (msg_t *) NULL;
     }
+    if (event) {
+      uint16_t val = ((uint16_t)rx().msg_class) +
+                     (((uint16_t)rx().msg_id)<<8);
+      Event::push( Event::RECEIVE_COMPLETED_TYPE, this, val );
+    }
+  }
 }
 
 int ubloxGPS::putchar(char c)
@@ -47,47 +71,58 @@ int ubloxGPS::putchar(char c)
             rxState = (rxState_t) UBX_IDLE;
           }
           break;
-          
+
       case UBX_HEAD:
-          m_rx_msg.crc_a += chr;
-          m_rx_msg.crc_b += m_rx_msg.crc_a;
+          rx().crc_a += chr;
+          rx().crc_b += rx().crc_a;
 
           switch (chrCount++) {
             case 0:
-              m_rx_msg.msg_class = (msg_class_t) chr;
+              rx().msg_class = (msg_class_t) chr;
               break;
             case 1:
-              m_rx_msg.msg_id = (msg_id_t) chr;
+              rx().msg_id = (msg_id_t) chr;
               break;
             case 2:
-              m_rx_msg.length = chr;
+              rx().length = chr;
               break;
             case 3:
-              m_rx_msg.length += chr << 8;
+              rx().length += chr << 8;
               chrCount = 0;
               rxState = (rxState_t) UBX_RECEIVING_DATA;
-              m_rx_msg.start_save();
+              if (rx().msg_class == UBX_ACK) {
+                if (ack_expected)
+                  ack_same_as_sent = true; // so far...
+              } else if (reply_expected && rx().same_kind( *reply ))
+                storage = reply;
+              else
+                storage = storage_for( rx() );
               break;
           }
           break;
-          
+
         case UBX_RECEIVING_DATA:
-          m_rx_msg.crc_a += chr;
-          m_rx_msg.crc_b += m_rx_msg.crc_a;
+          rx().crc_a += chr;
+          rx().crc_b += rx().crc_a;
 
-          if (m_rx_msg.save_in_reply &&
-              (chrCount < m_rx_msg.reply->length))
-            ((uint8_t *)m_rx_msg.reply)[ chrCount+sizeof(msg_hdr_t) ] = chr;
+          if (storage && (chrCount < storage->length))
+            ((uint8_t *)storage)[ sizeof(msg_t)+chrCount ] = chr;
 
-          if (++chrCount >= m_rx_msg.length) {
+          if (ack_same_as_sent) {
+            if (((chrCount == 0) && (sent.msg_class != (msg_class_t)chr)) ||
+                ((chrCount == 1) && (sent.msg_id    != (msg_id_t)chr)))
+              ack_same_as_sent = false;
+          }
+
+          if (++chrCount >= rx().length) {
             // payload size received
             rxState = (rxState_t) UBX_CRC_A;
           }
           break;
 
       case UBX_CRC_A:
-          if (chr != m_rx_msg.crc_a) {
-            m_rx_msg.msg_class = UBX_UNK;
+          if (chr != rx().crc_a) {
+            rx().msg_class = UBX_UNK;
 #ifdef NEOGPS_STATS
             statistics.parser_crcerr++;
 #endif
@@ -96,8 +131,8 @@ int ubloxGPS::putchar(char c)
           break;
 
       case UBX_CRC_B:
-          if (chr != m_rx_msg.crc_b) {
-            m_rx_msg.msg_class = UBX_UNK;
+          if (chr != rx().crc_b) {
+            rx().msg_class = UBX_UNK;
 #ifdef NEOGPS_STATS
             statistics.parser_crcerr++;
 #endif
@@ -116,7 +151,7 @@ int ubloxGPS::putchar(char c)
     return c;
 }
 
-bool ubloxGPS::enableNMEA( enum nmea_msg_t msgType, uint8_t rate )
+bool ubloxGPS::configNMEA( enum nmea_msg_t msgType, uint8_t rate )
 {
   static const ubx_nmea_msg_t ubx[] __PROGMEM = {
         UBX_GPGGA,
@@ -133,39 +168,39 @@ bool ubloxGPS::enableNMEA( enum nmea_msg_t msgType, uint8_t rate )
   if (msg_index >= membersof(ubx))
     return false;
 
-  nmea_msg_t msg = (nmea_msg_t) pgm_read_byte( &ubx[msg_index] );
-  cfg_msg_t cfg_msg( msg, rate );
-
-  return send( cfg_msg );
+  return config_msg_rate( UBX_NMEA, (msg_id_t) pgm_read_byte( &ubx[msg_index] ), rate );
 }
+
 
 
 void ubloxGPS::wait_for_idle() const
 {
   m_device->flush();
-  for (uint8_t waits=0; (!m_rx_msg.reply_received) && waits++ < 8;) {
-    if (receiving()) {
-      Watchdog::delay(16);
-    }
+  for (uint8_t waits=0; waits < 8; waits++) {
+
+    if (!receiving() || !waiting())
+      break;
+    Watchdog::delay(16);
   }
 }
 
 
-bool ubloxGPS::wait_for_reply()
+bool ubloxGPS::wait_for_ack()
 {
-    uint16_t sent = RTC::millis();
+  uint16_t sent = 0;
 
-    do {
-      if (m_rx_msg.reply_received) {
-        return true;
-      }
-      Watchdog::delay( 16 );
-    } while (((uint16_t) RTC::millis()) - sent < 100);
-        
-    return false;
+  do {
+    if (!waiting())
+      return true;
+    if (sent == 0)
+      sent = RTC::millis();
+    Watchdog::delay( 16 );
+  } while (((uint16_t) RTC::millis()) - sent < 100);
+
+  return false;
 }
 
-void ubloxGPS::write( const msg_t & msg ) const
+void ubloxGPS::write( const msg_t & msg )
 {
   m_device->putchar( SYNC_1 );
   m_device->putchar( SYNC_2 );
@@ -179,9 +214,12 @@ void ubloxGPS::write( const msg_t & msg ) const
 
   m_device->putchar( crc_a );
   m_device->putchar( crc_b );
+
+  sent.msg_class = msg.msg_class;
+  sent.msg_id    = msg.msg_id;
 }
 
-void ubloxGPS::write_P( const msg_t & msg ) const
+void ubloxGPS::write_P( const msg_t & msg )
 {
   m_device->putchar( SYNC_1 );
   m_device->putchar( SYNC_2 );
@@ -210,6 +248,9 @@ void ubloxGPS::write_P( const msg_t & msg ) const
 
   m_device->putchar( crc_a );
   m_device->putchar( crc_b );
+
+  sent.msg_class = msg.msg_class;
+  sent.msg_id    = msg.msg_id;
 }
 
 /**
@@ -217,33 +258,46 @@ void ubloxGPS::write_P( const msg_t & msg ) const
  * Sends UBX command and optionally waits for the ack.
  */
 
+#include "Cosa/trace.hh"
+
 bool ubloxGPS::send( const msg_t & msg, msg_t *reply_msg )
 {
-  cfg_ack_t local_reply;
-
-  if (reply_msg)
-    reply( reply_msg );
-  else {
-    if (msg.msg_class != UBX_CFG) {
-      local_reply.msg_class = msg.msg_class;
-      local_reply.msg_id    = msg.msg_id;
-      local_reply.length    = 0;
-    }
-    reply( &local_reply );
-  }
+  bool ok = true;
+trace << PSTR("::send - ");
+//  CFG poll messages will have two resposes:
+//  1) the message polled for
+//  2) and ACK_ACK for the poll request
 
   write( msg );
 
-  // When the input buffer is emptied, we'll check 
-  // to see if the reply was received.
-  wait_for_idle();
+  ack_expected = (msg.msg_class == UBX_CFG);
+  if (ack_expected) {
+    ack_received = false;
+    nak_received = false;
+    ack_same_as_sent = false;
+  }
 
-  if (wait_for_reply())
-    return (msg.msg_class != UBX_CFG) || (local_reply.msg_id == UBX_ACK_ACK);
+  if (reply_msg) {
+    reply = reply_msg;
+    reply_received = false;
+    reply_expected = true;
+  }
 
-  reply( (msg_t *) NULL );
+  if (waiting()) {
+    // When both the input and output buffers are emptied, we'll check
+    // to see if the optional ACK was received.
+    wait_for_idle();
 
-  return false;
+    ok = wait_for_ack();
+    if (ok) {
+if (ack_received) trace << PSTR("got an ACK\n");
+else if (nak_received) trace << PSTR("got a NAK!\n");
+else trace << PSTR("ok!\n");
+    }
+else trace << PSTR("wait_for_ack failed!\n");
+  }
+
+  return ok;
 }
 
 
@@ -258,7 +312,7 @@ static const uint8_t cfg_msg_data[] __PROGMEM =
   { ubloxGPS::UBX_CFG, ubloxGPS::UBX_CFG_MSG,
     sizeof(ubloxGPS::cfg_msg_t), 0,
     ubloxGPS::UBX_NMEA, NeoGPS::NMEA_VTG, 0 };
-  
+
 static const ubloxGPS::cfg_msg_t *cfg_msg_P =
   (const ubloxGPS::cfg_msg_t *) &cfg_msg_data[0];
 
@@ -275,29 +329,6 @@ const uint8_t test2_data[] __PROGMEM =
 const ubloxGPS::msg_t *test2 = (const ubloxGPS::msg_t *) &test2_data[0];
 
 
-// example configuration for stationary application
-
-    cfg_nav5_t setNav = {
-        UBX_CFG, UBX_CFG_NAV5, sizeof(cfg_nav5_t), 0,0, 
-        { true, true, true, true, true, true, true, true, 0xFF },
-        UBX_DYN_MODEL_STATIONARY,
-        UBX_POS_FIX_AUTO,
-        0,                  // fixed alt
-        10000,              // fixed alt variance
-        5,                  // min elev
-        0,                  // Max Time to perform Dead Reckoning
-        250,                // PDOP mask x0.1
-        250,                // HDOP mask x0.1
-        100,                // Pos Accuracy mask
-        300,                // Time Accuracy mask
-        0,                  // Static hold threshold (cm/s)
-        0,                  // DGPS timeout (v7 FW or later)
-        0, 0, 0 // -- always zero --
-      };
-
-    if (! send( setNav ))
-        return false;
-    
     // 1Hz Data Rate
     cfg_rate_t setDataRate =
       { UBX_CFG, UBX_CFG_RATE, sizeof(cfg_rate_t), 0,0,
@@ -305,21 +336,5 @@ const ubloxGPS::msg_t *test2 = (const ubloxGPS::msg_t *) &test2_data[0];
 
     if (! send( setDataRate ))
         return false;
-
-    // Disable unused message types (GLL, GSA, GSV, RMC, VTG)
-    for (enum nmea_msg_t i=NMEA_GLL; i <= NMEA_VTG; i++) {
-        if (! enableNMEA( i, 0 ))
-            return false;
-    }
-    
-    // make sure we receive date/time messages
-    if (! enableNMEA( NMEA_GPZDA, 2))
-        return false;
-
-    // after the time has a fix (good ZDAs received),
-    //    we'll enable the location messages (e.g., GPRMC) and
-    //    disable GPZDA.
-    
-    return true;
 
 #endif
