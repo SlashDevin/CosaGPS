@@ -151,33 +151,12 @@ int ubloxGPS::putchar(char c)
     return c;
 }
 
-bool ubloxGPS::configNMEA( enum nmea_msg_t msgType, uint8_t rate )
-{
-  static const ubx_nmea_msg_t ubx[] __PROGMEM = {
-        UBX_GPGGA,
-        UBX_GPGLL,
-        UBX_GPGSA,
-        UBX_GPGSV,
-        UBX_GPRMC,
-        UBX_GPVTG,
-        UBX_GPZDA,
-    };
-
-  uint8_t msg_index = (uint8_t) msgType - (uint8_t) NMEA_FIRST_MSG;
-
-  if (msg_index >= membersof(ubx))
-    return false;
-
-  return config_msg_rate( UBX_NMEA, (msg_id_t) pgm_read_byte( &ubx[msg_index] ), rate );
-}
-
 
 
 void ubloxGPS::wait_for_idle() const
 {
-  m_device->flush();
+  // Wait for the input buffer to be emptied
   for (uint8_t waits=0; waits < 8; waits++) {
-
     if (!receiving() || !waiting())
       break;
     Watchdog::delay(16);
@@ -187,15 +166,26 @@ void ubloxGPS::wait_for_idle() const
 
 bool ubloxGPS::wait_for_ack()
 {
+  m_device->flush();
+
   uint16_t sent = 0;
+  uint16_t idle_time = 0;
 
   do {
-    if (!waiting())
-      return true;
-    if (sent == 0)
+    if (receiving()) {
+      wait_for_idle();
       sent = RTC::millis();
-    Watchdog::delay( 16 );
-  } while (((uint16_t) RTC::millis()) - sent < 100);
+    } else if (!waiting()) {
+      return true;
+    } else {
+      // Idle, accumulate time
+      uint16_t now = RTC::millis();
+      if (sent != 0)
+        idle_time += now-sent;
+      sent = now;
+      Watchdog::delay( 16 );
+    }
+  } while (idle_time < 100);
 
   return false;
 }
@@ -258,23 +248,20 @@ void ubloxGPS::write_P( const msg_t & msg )
  * Sends UBX command and optionally waits for the ack.
  */
 
-#include "Cosa/trace.hh"
+//#include "Cosa/trace.hh"
 
 bool ubloxGPS::send( const msg_t & msg, msg_t *reply_msg )
 {
+//trace << PSTR("::send - ");
   bool ok = true;
-trace << PSTR("::send - ");
-//  CFG poll messages will have two resposes:
-//  1) the message polled for
-//  2) and ACK_ACK for the poll request
 
   write( msg );
 
-  ack_expected = (msg.msg_class == UBX_CFG);
-  if (ack_expected) {
+  if (msg.msg_class == UBX_CFG) {
     ack_received = false;
     nak_received = false;
     ack_same_as_sent = false;
+    ack_expected = true;
   }
 
   if (reply_msg) {
@@ -284,17 +271,13 @@ trace << PSTR("::send - ");
   }
 
   if (waiting()) {
-    // When both the input and output buffers are emptied, we'll check
-    // to see if the optional ACK was received.
-    wait_for_idle();
-
     ok = wait_for_ack();
     if (ok) {
-if (ack_received) trace << PSTR("got an ACK\n");
-else if (nak_received) trace << PSTR("got a NAK!\n");
-else trace << PSTR("ok!\n");
+//if (ack_received) trace << PSTR("got an ACK\n");
+//else if (nak_received) trace << PSTR("got a NAK!\n");
+//else trace << PSTR("ok!\n");
     }
-else trace << PSTR("wait_for_ack failed!\n");
+//else trace << PSTR("wait_for_ack failed!\n");
   }
 
   return ok;
@@ -327,14 +310,4 @@ const uint8_t test2_data[] __PROGMEM =
     0xE8, 0x03, 0x01, 0x00, ubloxGPS::UBX_TIME_REF_GPS, 0  };
 
 const ubloxGPS::msg_t *test2 = (const ubloxGPS::msg_t *) &test2_data[0];
-
-
-    // 1Hz Data Rate
-    cfg_rate_t setDataRate =
-      { UBX_CFG, UBX_CFG_RATE, sizeof(cfg_rate_t), 0,0,
-        1000, 1, UBX_TIME_REF_GPS };
-
-    if (! send( setDataRate ))
-        return false;
-
 #endif
