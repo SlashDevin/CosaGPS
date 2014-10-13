@@ -279,7 +279,7 @@ private:
       } else if (!decimal)
         // val is BCD until *after* decimal point
         val = (val<<4) | (chr - '0');
-      else if (decimal++ <= 6)
+      else if (decimal++ < 6)
         val = val*10 + (chr - '0');
     }
 
@@ -290,7 +290,7 @@ private:
         //    force the value into its final state.
         if (!decimal)
           parseDDMM( val, '.' );
-        while (decimal++ <= 6)
+        while (decimal++ < 6)
           val *= 10;
 
         // Value was in minutes x 1000000, convert to degrees x 10000000.

@@ -21,14 +21,15 @@ namespace ublox {
 
     enum msg_id_t
       {
-        UBX_ACK_NAK    = 0x00, // Reply to CFG messages
-        UBX_ACK_ACK    = 0x01, // Reply to CFG messages
-        UBX_CFG_MSG    = 0x01, // Configure which messages to send
-        UBX_CFG_RATE   = 0x08, // Configure message rate
-        UBX_CFG_NAV5   = 0x24, // Configure navigation engine settings
-        UBX_MON_VER    = 0x04, // Monitor Receiver/Software version
-        UBX_NAV_POSLLH = 0x02, // Current Position
-        UBX_NAV_VELNED = 0x12, // Current Velocity
+        UBX_ACK_NAK     = 0x00, // Reply to CFG messages
+        UBX_ACK_ACK     = 0x01, // Reply to CFG messages
+        UBX_CFG_MSG     = 0x01, // Configure which messages to send
+        UBX_CFG_RATE    = 0x08, // Configure message rate
+        UBX_CFG_NAV5    = 0x24, // Configure navigation engine settings
+        UBX_MON_VER     = 0x04, // Monitor Receiver/Software version
+        UBX_NAV_POSLLH  = 0x02, // Current Position
+        UBX_NAV_VELNED  = 0x12, // Current Velocity
+        UBX_NAV_TIMEGPS = 0x20, // Current GPS Time
         UBX_ID_UNK   = 0xFF
       }  __attribute__((packed));
 
@@ -195,7 +196,23 @@ namespace ublox {
         
         nav_velned_t() : msg_t( UBX_NAV, UBX_NAV_VELNED, UBX_CTOR_LEN ) {};
     }  __attribute__((packed));
-    
+
+    // GPS Time Solution
+    struct nav_timegps_t : msg_t {
+        uint32_t time_of_week;   // mS
+        int32_t  fractional_ToW; // nS
+        int16_t  week;
+        int8_t   leap_seconds;   // GPS-UTC
+        struct {
+          bool time_of_week:1;
+          bool week:1;
+          bool leap_seconds:1;
+        } __attribute__((packed))
+          valid;
+
+        nav_timegps_t() : msg_t( UBX_NAV, UBX_NAV_TIMEGPS, UBX_CTOR_LEN ) {};
+    }  __attribute__((packed));
+
 };
 
 #endif
