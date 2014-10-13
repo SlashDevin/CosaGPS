@@ -35,83 +35,6 @@
 class NeoGPS : public IOStream::Device, public Event::Handler
 {
 public:
-
-    /**
-     * Struct for storing location data from GPS
-     */
-    struct Location {
-        int32_t               lat; // degree * 1e6, negative is South
-        int32_t               lon; // degree * 1e6, negative is West
-    } __attribute__((packed));
-
-    enum gps_fix_status_t {
-      GPS_FIX_NONE = 0,
-      GPS_FIX_STD  = 1,
-      GPS_FIX_DGPS = 2,
-      GPS_FIX_EST  = 6
-    } __attribute__((packed));
-
-    struct {
-        enum gps_fix_status_t stat     :3;
-        uint8_t               satCnt   :5;
-    } __attribute__((packed));
-
-    volatile uint8_t         hdop;
-
-    volatile struct Location location;
-    volatile struct time_t   dateTime;    // BCD
-    volatile uint8_t         dateTime_cs; // BCD hundredths of a second
-
-    volatile uint8_t  speed;        // BCD knots
-    volatile uint16_t speed_frac;   // BCD knots * 1000
-    uint16_t get_speed() const      // knots * 1000
-    {
-      uint16_t  frac =
-        ((uint16_t)to_binary(speed_frac>>8))*100 +
-        ((uint16_t)to_binary(speed_frac));
-      return ((uint16_t)to_binary(speed))*1000 + frac;
-    };
-    
-    volatile uint16_t heading;      // BCD degrees * 10
-    uint16_t get_heading() const    // degrees * 10
-    {
-      return
-        ((uint16_t)to_binary( heading>>8 ))*100 +
-        ((uint16_t)to_binary( heading ));
-    };
-
-    volatile uint16_t alt;         // BCD meters
-    volatile uint8_t  alt_frac;    // BCD meters * 100
-    uint16_t get_altitude() const  // meters * 100
-    {
-      uint16_t  val    =
-        ((uint16_t)to_binary( alt>>8 ))*100 +
-        ((uint16_t)to_binary( alt ));
-      return val*100 + ((uint16_t)to_binary(alt_frac));
-    };
-
-    volatile union {
-      uint8_t all;
-      struct {
-        bool dateTime:1;
-        bool location:1;
-        bool altitude:1;
-        bool speed:1;
-        bool heading:1;
-      } __attribute__((packed));
-    } __attribute__((packed))
-        valid;
-
-    /**
-     * Internal GPS parser statistics.
-     */
-#ifdef NEOGPS_STATS
-    volatile struct {
-        uint8_t  parser_ok;     // count of successfully parsed packets
-        uint8_t  parser_crcerr; // count of CRC errors
-    } statistics;
-#endif
-
     /** NMEA message types. */
     enum nmea_msg_t {
         NMEA_UNKNOWN,
@@ -126,22 +49,6 @@ public:
     static const nmea_msg_t NMEA_FIRST_MSG = NMEA_GGA;
     static const nmea_msg_t NMEA_LAST_MSG  = NMEA_ZDA;
     
-    /**
-     * Constructor
-     */
-    NeoGPS( IOStream::Device *device = (IOStream::Device *) NULL )
-    {
-      m_device = device;
-      valid.all = 0;
-      nmeaMessage = NMEA_UNKNOWN;
-      rxState = NMEA_IDLE;
-    };
-
-    void poll( nmea_msg_t msg ) const;
-    
-    void send( const char *msg ) const; // '$' is optional, and '*' and CS added
-    void send_P( const char *msg ) const; // '$' is optional, and '*' and CS added
-
 protected:
     IOStream::Device *m_device;
 
@@ -149,10 +56,19 @@ protected:
      * Written to by UART driver as soon as a new char is received.
      * Called inside Irq handler.
      */
-    int putchar( char c );
+    virtual int putchar( char c );
+
+    /*
+     * Current parser state
+     */
+    uint8_t         crc;
+    uint8_t         fieldIndex;
+    uint8_t         chrCount;  // index of current character in current field
+    enum nmea_msg_t nmeaMessage:4;
+    uint8_t         decimal:3; // digits after the decimal point
 
     /**
-     * Internal FSM state.
+     * Internal FSM.
      */
     enum rxState_t {
         NMEA_IDLE,
@@ -168,26 +84,176 @@ protected:
     {
       return (rxState != NMEA_IDLE) || (m_device && m_device->available());
     }
-              
 
-    /*
-     * Current internal parser state
+public:
+
+    /**
+     * Constructor
      */
-    volatile uint8_t crc;
-    uint8_t chrCount;  // index of current character in current field
+    NeoGPS( IOStream::Device *device = (IOStream::Device *) NULL )
+    {
+      m_device = device;
+      rxState = NMEA_IDLE;
+    };
+
+    struct position_t {
+        int32_t    lat; // degree * 1e7, negative is South
+        int32_t    lon; // degree * 1e7, negative is West
+        struct alt_t {
+          uint16_t m;
+          uint8_t  cm:7;
+          bool     negative:1;
+          void init() volatile 
+          {
+            m    = 0;
+            cm   = 0;
+            negative = false;
+          }
+          int32_t in_cm() const volatile
+            { return (negative ? -1L : 1L) * (m*100UL + cm); };
+        } alt;
+        void init()
+        {
+          lat = 0;
+          lon = 0;
+          alt.init();
+        };
+    } __attribute__((packed));
+
+    struct velocity_t {
+        struct spd_t {
+          uint8_t  knots;
+          uint16_t milli_knots;
+          void init() volatile 
+          {
+            knots = 0;
+            milli_knots = 0;
+          }
+          uint32_t in_mkn() const volatile     // knots * 1000
+            { return ((uint32_t) knots)*1000L + milli_knots; };
+        } spd;
+        struct hdg_t {
+          union {
+            struct {
+              uint16_t degrees:9;
+              uint8_t  centi_degrees:7;
+            } __attribute__((packed));
+            uint16_t all;
+          } __attribute__((packed));
+          void init() volatile { all = 0; };
+          uint16_t in_cd() const volatile     // degrees * 100
+            { return degrees*100 + centi_degrees; };
+        } hdg;
+        void init() volatile { spd.init(); hdg.init(); };
+    } __attribute__((packed));
+
+    enum gps_fix_status_t {
+      GPS_FIX_NONE = 0,
+      GPS_FIX_STD  = 1,
+      GPS_FIX_DGPS = 2,
+      GPS_FIX_EST  = 6
+    } __attribute__((packed));
+
+    struct gps_fix_t {
+        struct position_t position;
+        struct velocity_t velocity;
+        struct time_t     dateTime;    // BCD
+        uint8_t           dateTime_cs; // BCD hundredths of a second
+        gps_fix_status_t  status    :3;
+        uint8_t           satellites:5;
+        uint8_t           hdop;
+        union gps_fix_valid_t {
+          uint8_t all;
+          struct {
+            bool dateTime:1;
+            bool location:1;
+            bool altitude:1;
+            bool speed:1;
+            bool heading:1;
+          } __attribute__((packed));
+        } __attribute__((packed))
+            valid;
+
+        gps_fix_t() { init(); };
+        void init()
+        {
+          position.init();
+          velocity.init();
+          status = GPS_FIX_NONE;
+          satellites = 0;
+          hdop = 0;
+          valid.all = 0;
+        };
+
+        gps_fix_t & operator |=( const gps_fix_t & r )
+        {
+          if (r.status != GPS_FIX_NONE)
+            status = r.status;
+          if (r.hdop != 0)
+            hdop = r.hdop;
+          if (r.satellites != 0)
+            satellites = r.satellites;
+          if (r.valid.dateTime)
+            dateTime = r.dateTime;
+          if (r.valid.location) {
+            position.lat = r.position.lat;
+            position.lon = r.position.lon;
+          }
+          if (r.valid.altitude)
+            position.alt = r.position.alt;
+          if (r.valid.heading)
+            velocity.hdg = r.velocity.hdg;
+          if (r.valid.speed)
+            velocity.spd = r.velocity.spd;
+          valid.all |= r.valid.all;
+          return *this;
+        }
+
+        int32_t latitudeL() const { return position.lat; };
+        float latitude() const { return ((float) position.lat) * 1.0e-7; };
+
+        int32_t longitudeL() const { return position.lon; };
+        float longitude() const { return ((float) position.lon) * 1.0e-7; };
+
+        int32_t altitude_cm() const { return position.alt.in_cm(); };
+        float altitude() const { return ((float) altitude_cm()) * 0.01; };
+
+        uint32_t speed_mkn() const { return velocity.spd.in_mkn(); };
+        float speed() const { return ((float)speed_mkn()) * 0.001; };
+
+        uint16_t heading_cd() const { return velocity.hdg.in_cd(); };
+        float heading() const { return ((float)heading_cd()) * 0.01; };
+
+    } __attribute__((packed)); // time_t in Time.hh needs to be packed!
+
+    volatile const struct gps_fix_t & fix() const { return m_fix; };
+
+
+    /**
+     * Internal GPS parser statistics.
+     */
+#ifdef NEOGPS_STATS
+    volatile struct {
+        uint8_t  parser_ok;     // count of successfully parsed packets
+        uint8_t  parser_crcerr; // count of CRC errors
+    } statistics;
+#endif
+
+    void poll( nmea_msg_t msg ) const;
+    
+    void send( const char *msg ) const; // '$' is optional, and '*' and CS added
+    void send_P( const char *msg ) const; // '$' is optional, and '*' and CS added
+
+protected:
+    //  Current fix state
+    volatile struct gps_fix_t m_fix;
 
 private:
-    struct {
-      enum nmea_msg_t nmeaMessage   :7;
-      bool            before_decimal:1;
-    } __attribute__((packed));
-    
     void rxBegin();
     void rxEnd( bool ok );
-
-    bool parseField(char chr);
-    uint8_t fieldIndex;     // index of currently receiving field
-    bool parseTimeField(char chr);
+    
+    bool parseField( char chr );
+    bool parseTimeField( char chr );
     bool parseFixMode( char chr );
     bool parseFixStatus( char chr );
     void parseSpeed( char chr );
@@ -200,31 +266,40 @@ private:
     {
       if (chrCount == 0) {
         val = 0;
-        before_decimal = true;
+        decimal = 0;
       }
       
       if (chr == '.') {
-        before_decimal = false;
+        decimal = 1;
         uint8_t *valBCD = (uint8_t *) const_cast<int32_t *>( &val );
         uint8_t  deg     = to_binary( valBCD[2] )*10 + to_binary( valBCD[1] );
         val = (deg * 60) + to_binary( valBCD[0] );
         // val now in units of minutes
 
-      } else if (before_decimal)
-          // val is BCD until *after* decimal point
-          val = (val<<4) | (chr - '0');
-      else 
-          val = val*10 + (chr - '0');
+      } else if (!decimal)
+        // val is BCD until *after* decimal point
+        val = (val<<4) | (chr - '0');
+      else if (decimal++ <= 6)
+        val = val*10 + (chr - '0');
     }
 
     void endDDMM( volatile int32_t & val )
     {
-      // was in minutes x 100000, now in degrees x 1000000
-      val = (val+3)/6;
+      if (val) {
+        // If the last chars in ".mmmm" were not received,
+        //    force the value into its final state.
+        if (!decimal)
+          parseDDMM( val, '.' );
+        while (decimal++ <= 6)
+          val *= 10;
+
+        // Value was in minutes x 1000000, convert to degrees x 10000000.
+        val += (val*2 + 1)/3; // aka (10*val+3)/6, but without sign truncation
+      }
     }
 
     bool send_header( const char * & msg ) const;
     void send_trailer( uint8_t crc ) const;
-};
+} __attribute__((packed));
 
 #endif
