@@ -1,4 +1,4 @@
-#include "ubxmsg.h"
+#include "ubxGPS.h"
 
 using namespace ublox;
 
@@ -19,7 +19,7 @@ bool ublox::configNMEA( ubloxGPS &gps, NeoGPS::nmea_msg_t msgType, uint8_t rate 
   if (msg_index >= membersof(ubx))
     return false;
 
-  ubloxGPS::msg_id_t msg_id = (ubloxGPS::msg_id_t) pgm_read_byte( &ubx[msg_index] );
+  msg_id_t msg_id = (msg_id_t) pgm_read_byte( &ubx[msg_index] );
 
-  return gps.send( cfg_msg_t( ubloxGPS::UBX_NMEA, msg_id, rate ) );
+  return gps.send( cfg_msg_t( UBX_NMEA, msg_id, rate ) );
 }

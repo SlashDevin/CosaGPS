@@ -2,6 +2,8 @@
 
 #include "Cosa/RTC.hh"
 
+using namespace ublox;
+
 void ubloxGPS::rxBegin()
 {
   rx().init();
