@@ -1,22 +1,29 @@
 #ifndef _UBXGPS_H_
 #define _UBXGPS_H_
 
-#include "NeoGPS.h"
+#include "NMEAGPS.h"
 #include "ubxmsg.h"
 
 #include <avr/pgmspace.h>
 
-class ubloxGPS : public NeoGPS
+class ubloxGPS : public NMEAGPS
 {
 public:
 
     ubloxGPS( IOStream::Device *device )
-      : NeoGPS( device ),
+      : NMEAGPS( device ),
         storage( (ublox::msg_t *) NULL ),
         reply( (ublox::msg_t *) NULL ),
         reply_expected( false ),
         ack_expected( false )
       {};
+
+    // These must be set when available
+    static uint8_t leap_seconds;
+    static clock_t start_of_week;
+
+    clock_t offset( uint32_t time_of_week )
+      { return (clock_t) (start_of_week + time_of_week - leap_seconds); }
 
     /**
      * Send a message (non-blocking).
@@ -144,6 +151,7 @@ private:
       }
 
     } __attribute__((packed));
+
     volatile rx_msg_t m_rx_msg;
     volatile rx_msg_t & rx() { return m_rx_msg; }
 

@@ -1,7 +1,7 @@
 #ifndef UBXMSG_H
 #define UBXMSG_H
 
-#include "NeoGPS.h"
+#include "NMEAGPS.h"
 class ubloxGPS;
 
 namespace ublox {
@@ -84,7 +84,7 @@ namespace ublox {
         };
     } __attribute__((packed));
 
-    extern bool configNMEA( ubloxGPS &gps, NeoGPS::nmea_msg_t msgType, uint8_t rate );
+    extern bool configNMEA( ubloxGPS &gps, NMEAGPS::nmea_msg_t msgType, uint8_t rate );
     
 
     // Configure navigation rate

@@ -1,8 +1,8 @@
-#ifndef NeoGPS_h
-#define NeoGPS_h
+#ifndef NMEAGPS_h
+#define NMEAGPS_h
 
 /**
- * @file NeoGPS.h
+ * @file NMEAGPS.h
  * @version 2.0
  *
  * @section License
@@ -32,7 +32,7 @@
  * Only NMEA messages of types GGA, GLL, RMC, VTG, ZDA are parsed.
  */
 
-class NeoGPS : public IOStream::Device, public Event::Handler
+class NMEAGPS : public IOStream::Device, public Event::Handler
 {
 public:
     /** NMEA message types. */
@@ -90,7 +90,7 @@ public:
     /**
      * Constructor
      */
-    NeoGPS( IOStream::Device *device = (IOStream::Device *) NULL )
+    NMEAGPS( IOStream::Device *device = (IOStream::Device *) NULL )
     {
       m_device = device;
       rxState = NMEA_IDLE;
@@ -99,40 +99,61 @@ public:
     struct position_t {
         int32_t    lat; // degree * 1e7, negative is South
         int32_t    lon; // degree * 1e7, negative is West
+
         struct alt_t {
           uint16_t m;
-          uint8_t  cm:7;
-          bool     negative:1;
+          union {
+            struct {
+              uint8_t  cm:7;
+              bool     negative:1;
+            } __attribute__((packed));
+            uint8_t all;
+          } __attribute__((packed));
+          
           void init() volatile 
           {
-            m    = 0;
-            cm   = 0;
-            negative = false;
+            m   = 0;
+            all = 0; // cm = 0, negative = false
           }
+          
           int32_t in_cm() const volatile
             { return (negative ? -1L : 1L) * (m*100UL + cm); };
         } alt;
+
         void init()
         {
           lat = 0;
           lon = 0;
           alt.init();
         };
+
     } __attribute__((packed));
 
     struct velocity_t {
-        struct spd_t {
+    
+      struct spd_t {
           uint8_t  knots;
           uint16_t milli_knots;
+
           void init() volatile 
           {
             knots = 0;
             milli_knots = 0;
           }
+
           uint32_t in_mkn() const volatile     // knots * 1000
             { return ((uint32_t) knots)*1000L + milli_knots; };
-        } spd;
-        struct hdg_t {
+
+          void from_cm_per_s( uint32_t cm_per_s )
+          {
+            uint32_t nm00000_per_h = (cm_per_s * 1852) / 3600;
+            knots = nm00000_per_h / 100000UL;
+            milli_knots = (nm00000_per_h - knots * 100000) / 100;
+          }
+
+      } spd;
+
+      struct hdg_t {
           union {
             struct {
               uint16_t degrees:9;
@@ -140,11 +161,16 @@ public:
             } __attribute__((packed));
             uint16_t all;
           } __attribute__((packed));
+
           void init() volatile { all = 0; };
+
           uint16_t in_cd() const volatile     // degrees * 100
             { return degrees*100 + centi_degrees; };
-        } hdg;
-        void init() volatile { spd.init(); hdg.init(); };
+
+      } hdg;
+
+      void init() volatile { spd.init(); hdg.init(); };
+
     } __attribute__((packed));
 
     enum gps_fix_status_t {
@@ -157,11 +183,17 @@ public:
     struct gps_fix_t {
         struct position_t position;
         struct velocity_t velocity;
-        struct time_t     dateTime;    // BCD
-        uint8_t           dateTime_cs; // BCD hundredths of a second
-        gps_fix_status_t  status    :3;
-        uint8_t           satellites:5;
+        struct time_t     dateTime;
+        uint8_t           dateTime_cs; // hundredths of a second
+        union {
+          struct {
+            gps_fix_status_t  status    :3;
+            uint8_t           satellites:5;
+          } __attribute__((packed));
+          uint8_t status_satellites;
+        } __attribute__((packed));
         uint8_t           hdop;
+
         union gps_fix_valid_t {
           uint8_t all;
           struct {
@@ -175,12 +207,12 @@ public:
             valid;
 
         gps_fix_t() { init(); };
+
         void init()
         {
           position.init();
           velocity.init();
-          status = GPS_FIX_NONE;
-          satellites = 0;
+          status_satellites = 0;
           hdop = 0;
           valid.all = 0;
         };
@@ -224,7 +256,7 @@ public:
         uint16_t heading_cd() const { return velocity.hdg.in_cd(); };
         float heading() const { return ((float)heading_cd()) * 0.01; };
 
-    } __attribute__((packed)); // time_t in Time.hh needs to be packed!
+    };
 
     volatile const struct gps_fix_t & fix() const { return m_fix; };
 
@@ -240,7 +272,7 @@ public:
 #endif
 
     void poll( nmea_msg_t msg ) const;
-    
+
     void send( const char *msg ) const; // '$' is optional, and '*' and CS added
     void send_P( const char *msg ) const; // '$' is optional, and '*' and CS added
 
@@ -300,6 +332,6 @@ private:
 
     bool send_header( const char * & msg ) const;
     void send_trailer( uint8_t crc ) const;
-} __attribute__((packed));
+};
 
 #endif

@@ -4,6 +4,9 @@
 
 using namespace ublox;
 
+uint8_t ubloxGPS::leap_seconds = 0;
+clock_t ubloxGPS::start_of_week = 0;
+
 void ubloxGPS::rxBegin()
 {
   rx().init();
@@ -61,7 +64,7 @@ int ubloxGPS::putchar(char c)
           rxState = (rxState_t) UBX_SYNC2;
         else
           // Delegate
-          c = NeoGPS::putchar( c );
+          c = NMEAGPS::putchar( c );
         break;
 
 
@@ -146,7 +149,7 @@ int ubloxGPS::putchar(char c)
 
       default:
           // Delegate
-          c = NeoGPS::putchar( c );
+          c = NMEAGPS::putchar( c );
           break;
     }
 
@@ -296,7 +299,7 @@ bool ubloxGPS::send_P( const msg_t & msg, msg_t *reply_msg )
 static const uint8_t cfg_msg_data[] __PROGMEM =
   { ubloxGPS::UBX_CFG, ubloxGPS::UBX_CFG_MSG,
     sizeof(ubloxGPS::cfg_msg_t), 0,
-    ubloxGPS::UBX_NMEA, NeoGPS::NMEA_VTG, 0 };
+    ubloxGPS::UBX_NMEA, NMEAGPS::NMEA_VTG, 0 };
 
 static const ubloxGPS::cfg_msg_t *cfg_msg_P =
   (const ubloxGPS::cfg_msg_t *) &cfg_msg_data[0];

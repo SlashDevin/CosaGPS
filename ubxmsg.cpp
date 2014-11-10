@@ -2,7 +2,7 @@
 
 using namespace ublox;
 
-bool ublox::configNMEA( ubloxGPS &gps, NeoGPS::nmea_msg_t msgType, uint8_t rate )
+bool ublox::configNMEA( ubloxGPS &gps, NMEAGPS::nmea_msg_t msgType, uint8_t rate )
 {
   static const ubx_nmea_msg_t ubx[] __PROGMEM = {
         UBX_GPGGA,
@@ -14,7 +14,7 @@ bool ublox::configNMEA( ubloxGPS &gps, NeoGPS::nmea_msg_t msgType, uint8_t rate 
         UBX_GPZDA,
     };
 
-  uint8_t msg_index = (uint8_t) msgType - (uint8_t) NeoGPS::NMEA_FIRST_MSG;
+  uint8_t msg_index = (uint8_t) msgType - (uint8_t) NMEAGPS::NMEA_FIRST_MSG;
 
   if (msg_index >= membersof(ubx))
     return false;
