@@ -53,8 +53,6 @@ void NMEAGPS::rxEnd( bool ok )
 {
   rxState = NMEA_IDLE; // just in case Event::Handler cares about rxState
 
-  m_fix.valid.all = 0;
-
   if (ok) {
     // mark specific received data as valid   
     switch (nmeaMessage) {
@@ -136,6 +134,7 @@ int NMEAGPS::putchar( char c )
                 rxState = NMEA_RECEIVING_DATA;
                 fieldIndex = 0;
                 chrCount = 0;
+                m_fix.valid.as_byte = 0;
                 
             } else if ((c < 'A') || ('Z' < c)) {
                 // abort command parsing on invalid character
