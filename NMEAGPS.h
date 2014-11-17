@@ -49,14 +49,14 @@ public:
     static const nmea_msg_t NMEA_FIRST_MSG = NMEA_GGA;
     static const nmea_msg_t NMEA_LAST_MSG  = NMEA_ZDA;
     
-protected:
-    IOStream::Device *m_device; // required for transmitting *to* the device
-
     /**
      * Written to by UART driver as soon as a new char is received.
      * Called inside Irq handler.
      */
     virtual int putchar( char c );
+
+protected:
+    IOStream::Device *m_device; // required for transmitting *to* the device
 
     /**
      * Current parser state
@@ -64,15 +64,15 @@ protected:
     uint8_t         crc;
     uint8_t         fieldIndex;
     uint8_t         chrCount;  // index of current character in current field
-    enum nmea_msg_t nmeaMessage:4;
-    uint8_t         decimal:3; // digits after the decimal point
+    enum nmea_msg_t nmeaMessage;
+    uint8_t         decimal; // digits after the decimal point
+    bool            negative;
 
     /**
      * Internal FSM.
      */
     enum rxState_t {
         NMEA_IDLE,
-        NMEA_WAIT_FOR_COMMAND,
         NMEA_RECEIVING_DATA,
         NMEA_RECEIVING_CRC1,
         NMEA_RECEIVING_CRC2
@@ -96,91 +96,16 @@ public:
       rxState = NMEA_IDLE;
     };
 
-    //  A structure for holding the 3D position: latitude, longitude and altitude.
+    // A structure for holding the two parts of a floating-point number.
 
-    struct position_t {
-        int32_t    lat; // degree * 1e7, negative is South
-        int32_t    lon; // degree * 1e7, negative is West
-
-        struct alt_t {
-          uint16_t m;
-          union {
-            struct {
-              uint8_t  cm:7;
-              bool     negative:1;
-            } __attribute__((packed));
-            uint8_t all;
-          } __attribute__((packed));
-          
-          void init() volatile 
-          {
-            m   = 0;
-            all = 0; // cm = 0, negative = false
-          }
-          
-          int32_t in_cm() const volatile
-            { return (negative ? -1L : 1L) * (m*100UL + cm); };
-        } alt;
-
-        void init()
-        {
-          lat = 0;
-          lon = 0;
-          alt.init();
-        };
-
-    } __attribute__((packed));
-
-    //  A structure for holding the velocity: speed and heading.
-    
-    struct velocity_t {
-    
-      struct spd_t {
-          uint8_t  knots;
-          uint16_t milli_knots;
-
-          void init() volatile 
-          {
-            knots = 0;
-            milli_knots = 0;
-          }
-
-          uint32_t in_mkn() const volatile     // knots * 1000
-            { return ((uint32_t) knots)*1000L + milli_knots; };
-          uint32_t in_cm_per_s() const volatile;
-
-          void from_cm_per_s( uint32_t cm_per_s )
-          {
-            uint32_t nm00000_per_h = (cm_per_s * NM_PER_KM000) / 3600;
-            knots = nm00000_per_h / 100000UL;
-            milli_knots = (nm00000_per_h - knots * 100000) / 100;
-          }
-
-      } spd;
-
-      struct hdg_t {
-          union {
-            struct {
-              uint16_t degrees:9;
-              uint8_t  centi_degrees:7;
-            } __attribute__((packed));
-            uint16_t all;
-          } __attribute__((packed));
-
-          void init() volatile { all = 0; };
-
-          uint16_t in_cd() const volatile     // degrees * 100
-            { return degrees*100 + centi_degrees; };
-
-      } hdg;
-
-      void init() volatile { spd.init(); hdg.init(); };
-
-    } __attribute__((packed));
-
-    static const float NM_PER_KM = 1.852;
-    static const float KM_PER_NM = 1.0 / 1.852;
-    static const uint16_t NM_PER_KM000 = 1852;
+    struct whole_frac {
+      int16_t whole;
+      int16_t frac;
+      void init() { whole = 0; frac = 0; };
+      int32_t int32_00() const { return ((int32_t)whole) * 100L + frac; };
+      int16_t int16_00() const { return whole * 100 + frac; };
+      int32_t int32_000() const { return whole * 1000L + frac; };
+    };
 
     enum gps_fix_status_t {
       GPS_FIX_NONE = 0,
@@ -192,10 +117,13 @@ public:
     //  A structure for holding a GPS fix: time, position, velocity.
 
     struct gps_fix_t {
-        struct position_t position;
-        struct velocity_t velocity;
-        struct time_t     dateTime;
-        uint8_t           dateTime_cs; // hundredths of a second
+        int32_t       lat;  // degree * 1e7, negative is South
+        int32_t       lon;  // degree * 1e7, negative is West
+        whole_frac    alt;  // m*100
+        whole_frac    spd;  // knots*1000
+        whole_frac    hdg;  // degrees*100
+        struct time_t dateTime;
+        uint8_t       dateTime_cs; // hundredths of a second
         union {
           struct {
             gps_fix_status_t  status    :3;
@@ -223,8 +151,10 @@ public:
 
         void init()
         {
-          position.init();
-          velocity.init();
+          lat = lon = 0;
+          alt.init();
+          spd.init();
+          hdg.init();
           status_satellites = 0;
           hdop = 0;
           valid.as_byte = 0;
@@ -244,36 +174,34 @@ public:
           if (r.valid.dateTime)
             dateTime = r.dateTime;
           if (r.valid.location) {
-            position.lat = r.position.lat;
-            position.lon = r.position.lon;
+            lat = r.lat;
+            lon = r.lon;
           }
           if (r.valid.altitude)
-            position.alt = r.position.alt;
+            alt = r.alt;
           if (r.valid.heading)
-            velocity.hdg = r.velocity.hdg;
+            hdg = r.hdg;
           if (r.valid.speed)
-            velocity.spd = r.velocity.spd;
+            spd = r.spd;
           valid.as_byte |= r.valid.as_byte;
           return *this;
         }
 
         //  Convenience accessors for fix members.
 
-        int32_t latitudeL() const { return position.lat; };
-        float latitude() const { return ((float) position.lat) * 1.0e-7; };
+        int32_t latitudeL() const { return lat; };
+        float latitude() const { return ((float) lat) * 1.0e-7; };
 
-        int32_t longitudeL() const { return position.lon; };
-        float longitude() const { return ((float) position.lon) * 1.0e-7; };
+        int32_t longitudeL() const { return lon; };
+        float longitude() const { return ((float) lon) * 1.0e-7; };
 
-        int32_t altitude_cm() const { return position.alt.in_cm(); };
+        int32_t altitude_cm() const { return alt.int32_00(); };
         float altitude() const { return ((float) altitude_cm()) * 0.01; };
 
-        uint32_t speed_mkn() const { return velocity.spd.in_mkn(); };
-        uint32_t speed_cm_per_s() const { return velocity.spd.in_cm_per_s(); };
+        uint32_t speed_mkn() const { return spd.int32_000(); };
         float speed() const { return ((float)speed_mkn()) * 0.001; };
-        float speed_kph() const { return speed() * KM_PER_NM; };
 
-        uint16_t heading_cd() const { return velocity.hdg.in_cd(); };
+        uint16_t heading_cd() const { return hdg.int16_00(); };
         float heading() const { return ((float)heading_cd()) * 0.01; };
 
     };
@@ -385,12 +313,10 @@ private:
     void rxEnd( bool ok );
     
     bool parseField( char chr );
+    bool parseCommand( char chr );
     bool parseTimeField( char chr );
-    bool parseFixMode( char chr );
-    bool parseFixStatus( char chr );
-    void parseSpeed( char chr );
-    void parseHeading( char chr );
-    void parseAltitude( char chr );
+    bool parseFix( char chr );
+    void parseFloat( whole_frac & val, char chr, uint8_t max_decimal );
 
     // parse lat/lon dddmm.mmmm fields
 
@@ -401,33 +327,32 @@ private:
         decimal = 0;
       }
       
-      if (chr == '.') {
+      if ((chr == '.') || ((chr == ',') && !decimal)) {
+        // Now we know how many digits are in degrees, so we
+        // can use the appropriate digits and switch from BCD to binary.
+        // (The last two digits are always minutes.)
         decimal = 1;
         uint8_t *valBCD = (uint8_t *) const_cast<int32_t *>( &val );
         uint8_t  deg     = to_binary( valBCD[2] )*10 + to_binary( valBCD[1] );
         val = (deg * 60) + to_binary( valBCD[0] );
         // val now in units of minutes
+      }
+      
+      if (chr == ',') {
+        if (val) {
+          // If the last chars in ".mmmm" were not received,
+          //    force the value into its final state.
+          while (decimal++ < 6)
+            val *= 10;
 
+          // Value was in minutes x 1000000, convert to degrees x 10000000.
+          val += (val*2 + 1)/3; // aka (100*val+30)/60, but without sign truncation
+        }
       } else if (!decimal)
         // val is BCD until *after* decimal point
         val = (val<<4) | (chr - '0');
       else if (decimal++ < 6)
         val = val*10 + (chr - '0');
-    }
-
-    void endDDMM( volatile int32_t & val )
-    {
-      if (val) {
-        // If the last chars in ".mmmm" were not received,
-        //    force the value into its final state.
-        if (!decimal)
-          parseDDMM( val, '.' );
-        while (decimal++ < 6)
-          val *= 10;
-
-        // Value was in minutes x 1000000, convert to degrees x 10000000.
-        val += (val*2 + 1)/3; // aka (10*val+3)/6, but without sign truncation
-      }
     }
 
     bool send_header( const char * & msg ) const;

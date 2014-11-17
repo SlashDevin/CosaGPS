@@ -36,7 +36,6 @@ public:
 
           // See if we stepped into a different time interval,
           //   or if it has finally become valid after a cold start.
-
           if (merged.valid.dateTime && fix().valid.dateTime &&
               !same( merged.dateTime, fix().dateTime )) {
             
@@ -59,8 +58,9 @@ public:
               //     all of the previous fix and start with what we
               //     just received.
               merged = local_fix;
-            } else
+            } else {
               merged = *(const_cast<const gps_fix_t *>(&fix()));
+            }
 
           } else {
             // Accumulate all the reports in this time interval
@@ -142,15 +142,12 @@ void setup()
   // Start the normal trace output
   uart.begin(9600);
   trace.begin(&uart, PSTR("CosaNMEAGPS: started"));
+  trace << PSTR("fix object size = ") << sizeof(gps.fix()) << endl;
+  trace << PSTR("NMEAGPS object size = ") << sizeof(NMEAGPS) << endl;
 
   // Start the additional UART
   delay(200);
   uart1.begin(9600);
-  
-  trace << PSTR("velocity object size = ") << sizeof(gps.fix().velocity) << endl;
-  trace << PSTR("position object size = ") << sizeof(gps.fix().position) << endl;
-  trace << PSTR("fix object size = ") << sizeof(gps.fix()) << endl;
-  trace << PSTR("NMEAGPS object size = ") << sizeof(NMEAGPS) << endl;
 }
 
 //--------------------------
