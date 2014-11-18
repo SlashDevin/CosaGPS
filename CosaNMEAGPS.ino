@@ -7,131 +7,101 @@
 #include "Cosa/Trace.hh"
 #include "Cosa/IOBuffer.hh"
 #include "Cosa/IOStream/Driver/UART.hh"
-#include "Cosa/linkage.hh"
 #include "Cosa/Watchdog.hh"
 
 #include "./NMEAGPS.h"
 
+static IOBuffer<UART::BUFFER_MAX> obuf;
+static IOBuffer<UART::BUFFER_MAX> ibuf;
+UART uart1(1, &ibuf, &obuf);
+
+static NMEAGPS gps( &uart1 );
+static NMEAGPS::gps_fix_t merged;
+
 static clock_t now = 0;
 static clock_t lastTrace = 0;
 
-//----------------------------------
+//--------------------------
 
-bool same( const time_t & l, const volatile time_t & r )
+static void processSentence()
 {
-  return (memcmp( &l, const_cast<const time_t *>(&r), sizeof(l) ) == 0);
-}
+  // See if we stepped into a different time interval,
+  //   or if it has finally become valid after a cold start.
+  if (merged.valid.dateTime && gps.fix().valid.dateTime &&
+      (merged.dateTime != gps.fix().dateTime)) {
 
-class MyGPS : public NMEAGPS
-{
-public:
-    gps_fix_t merged;
+    // Log the previous interval
+    traceIt();
 
-    MyGPS( IOStream::Device *tx ) : NMEAGPS( tx ) { };
+    //  Since we're into the next time interval, we throw away
+    //     all of the previous fix and start with what we
+    //     just received.
+    merged = gps.fix();
 
-    virtual void on_event ( uint8_t type, uint16_t value )
-      {
-        if ((NMEA_GGA == (nmea_msg_t)value) ||
-            (NMEA_RMC == (nmea_msg_t)value)) {
-
-          // See if we stepped into a different time interval,
-          //   or if it has finally become valid after a cold start.
-          if (merged.valid.dateTime && fix().valid.dateTime &&
-              !same( merged.dateTime, fix().dateTime )) {
-            
-            //  Set the RTC to this new fix
-            RTC::time( (clock_t) (const_cast<const gps_fix_t *>(&fix()))->dateTime );
-
-            // Log the previous interval
-            if (merged.valid.location && 
-                merged.valid.altitude &&
-                merged.valid.speed && 
-                merged.valid.heading &&
-                merged.valid.dateTime) {
-
-              //  /traceIt/ takes a long time, so the /fix/ data
-              //     would probably get overwritten.  Save it first.
-              gps_fix_t local_fix = *(const_cast<const gps_fix_t *>(&fix()));
-              traceIt( true );
-
-              //  Since we're into the next time interval, we throw away
-              //     all of the previous fix and start with what we
-              //     just received.
-              merged = local_fix;
-            } else {
-              merged = *(const_cast<const gps_fix_t *>(&fix()));
-            }
-
-          } else {
-            // Accumulate all the reports in this time interval
-            merged |= *(const_cast<const gps_fix_t *>(&fix()));
-          }
-        }
-      };
-
-};
-
-extern UART uart1; // forward declaration
-MyGPS gps( &uart1 );
-
-static IOBuffer<UART::BUFFER_MAX> obuf;
-UART uart1(1, &gps, &obuf);
-
-//--------------------------------
-
-static void print2( uint8_t val )
-{
-  char buf[4];
-  if (val < 10) {
-    buf[0] = '0';
-    buf[1] = val + '0';
   } else {
-    buf[0] = val/10;
-    buf[1] = (val-(buf[0]*10)) + '0';
-    buf[0]+= '0';
+    // Accumulate all the reports in this time interval
+    merged |= gps.fix();
   }
-  buf[2] = NULL;
-
-  trace << buf;
 }
 
-static void traceIt( bool gotFix )
+//--------------------------
+
+//#define USE_FLOAT
+
+static void traceIt()
 {
-  if (gps.merged.valid.dateTime) {
-    print2( gps.merged.dateTime.date );
-    print2( gps.merged.dateTime.month );
-    print2( gps.merged.dateTime.year  );
-
-    trace << PSTR(",");
-
-    print2( gps.merged.dateTime.hours );
-    print2( gps.merged.dateTime.minutes );
-    print2( gps.merged.dateTime.seconds );
-    print2( gps.merged.dateTime_cs );
-    trace << PSTR(",");
+  if (merged.valid.dateTime) {
+    trace << merged.dateTime << PSTR(".");
+    if (merged.dateTime_cs < 10)
+      trace << '0';
+    trace << merged.dateTime_cs;
   } else {
-    trace << PSTR(",,");
     //  Apparently we don't have a fix yet, ask for a ZDA (Zulu Date and Time)
     gps.poll( NMEAGPS::NMEA_ZDA );
   }
+  trace << PSTR(",");
 
-  if (gotFix) {
-    trace << gps.merged.latitudeL() << PSTR(",") << gps.merged.longitudeL() << PSTR(",");
-    trace << gps.merged.heading_cd() << PSTR(",");
-    trace << gps.merged.speed_mkn() << PSTR(",");
-    trace << gps.merged.altitude_cm() << PSTR(",");
-
-  } else {
-    trace << PSTR(",,,,,"); // lat, lon, hdg, spd, alt,
-  }
-
+#ifdef USE_FLOAT
+  trace.width(3);
+  trace.precision(6);
+  if (merged.valid.location)
+    trace << merged.latitude() << PSTR(",") << merged.longitude();
+  else
+    trace << PSTR(",");
+  trace << PSTR(",");
+  trace.precision(2);
+  if (merged.valid.heading)
+    trace << merged.heading();
+  trace << PSTR(",");
+  trace.precision(3);
+  if (merged.valid.speed)
+    trace << merged.speed();
+  trace << PSTR(",");
+  trace.precision(2);
+  if (merged.valid.altitude)
+    trace << merged.altitude();
+#else
+  if (merged.valid.location)
+    trace << merged.latitudeL() << PSTR(",") << merged.longitudeL();
+  else
+    trace << PSTR(",");
+  trace << PSTR(",");
+  if (merged.valid.heading)
+    trace << merged.heading_cd();
+  trace << PSTR(",");
+  if (merged.valid.speed)
+    trace << merged.speed_mkn();
+  trace << PSTR(",");
+  if (merged.valid.altitude)
+    trace << merged.altitude_cm();
+#endif
   trace << endl;
 
   lastTrace = now;
 
 } // traceIt
 
-//--------------
+//--------------------------
 
 void setup()
 {
@@ -144,9 +114,9 @@ void setup()
   trace.begin(&uart, PSTR("CosaNMEAGPS: started"));
   trace << PSTR("fix object size = ") << sizeof(gps.fix()) << endl;
   trace << PSTR("NMEAGPS object size = ") << sizeof(NMEAGPS) << endl;
+  uart.flush();
 
-  // Start the additional UART
-  delay(200);
+  // Start the UART for the GPS device
   uart1.begin(9600);
 }
 
@@ -154,12 +124,12 @@ void setup()
 
 void loop()
 {
+  while (uart1.available())
+    if (gps.decode( uart1.getchar() ))
+      processSentence();
+
   now = RTC::time();
 
-  Event event;
-  while (Event::queue.dequeue( &event ))
-    event.dispatch();
-
   if (lastTrace + 5 <= now)
-    traceIt( false );
+    traceIt();
 }

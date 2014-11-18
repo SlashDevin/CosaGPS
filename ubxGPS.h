@@ -18,6 +18,8 @@ public:
         ack_expected( false )
       {};
 
+    bool decode( char c );
+
     // These must be set when available
     static uint8_t leap_seconds;
     static clock_t start_of_week;
@@ -98,21 +100,38 @@ private:
     void write( const ublox::msg_t & msg );
     void write_P( const ublox::msg_t & msg );
 
-    void wait_for_idle() const;
+    void wait_for_idle();
     bool wait_for_ack();
     bool waiting() const
     {
       return (ack_expected && (!ack_received && !nak_received)) ||
              (reply_expected && !reply_received);
     }
+    bool receiving() const
+    {
+      return (rxState != NMEA_IDLE) || (m_device && m_device->available());
+    }
 
+    //  This method is called from inside /wait_for_idle/.
+    //
+    //  If a derived class processes incoming chars in the background
+    //  (e.g., a derived IOStream::Device::/putchar/ called from the IRQ),
+    //  this default do-nothing method is sufficient.
+    //
+    //  If /this/ instance does NOT process characters in the background,
+    //  /run/ must be provided to continue decoding the input stream while 
+    //  blocked in /wait_for_idle/.  For example,
+    //            while (uart.available())
+    //              decode( uart.getchar() );
+
+    virtual void run() {};
 
     // Derived class should override this if the contents of a
     //   particular message need to be saved.
     // This executes in an interrupt context, so be quick!
     //  NOTE: the ublox::msg_t.length will get stepped on, so you may need to
     //  set it every time if you are using a union for your storage.
-    virtual ublox::msg_t *storage_for( volatile const ublox::msg_t & rx_msg )
+    virtual ublox::msg_t *storage_for( const ublox::msg_t & rx_msg )
       { return (ublox::msg_t *)NULL; };
 
     ublox::msg_t   *storage;   // cached ptr to hold a received msg.
@@ -142,7 +161,7 @@ private:
         init();
       }
 
-      void init() volatile
+      void init()
       {
         msg_class = ublox::UBX_UNK;
         msg_id    = ublox::UBX_ID_UNK;
@@ -152,16 +171,17 @@ private:
 
     } __attribute__((packed));
 
-    volatile rx_msg_t m_rx_msg;
-    volatile rx_msg_t & rx() { return m_rx_msg; }
+    rx_msg_t m_rx_msg;
 
     void rxBegin();
-    void rxEnd();
+    bool rxEnd();
 
     static const uint8_t SYNC_1 = 0xB5;
     static const uint8_t SYNC_2 = 0x62;
 
 protected:
+    rx_msg_t & rx() { return m_rx_msg; }
+
     enum ubxState_t {
         UBX_IDLE  = NMEA_IDLE,
         UBX_SYNC2 = NMEA_LAST_STATE+1,
@@ -170,8 +190,9 @@ protected:
         UBX_CRC_A,
         UBX_CRC_B
     }  __attribute__((packed));
+    static const ubxState_t UBX_FIRST_STATE = UBX_SYNC2;
+    static const ubxState_t UBX_LAST_STATE  = UBX_CRC_B;
 
-    int putchar( char c );
 };
 
 #endif

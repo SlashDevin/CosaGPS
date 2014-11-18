@@ -1,6 +1,7 @@
 #include "ubxGPS.h"
 
 #include "Cosa/RTC.hh"
+#include "Cosa/Watchdog.hh"
 
 using namespace ublox;
 
@@ -14,8 +15,10 @@ void ubloxGPS::rxBegin()
   chrCount = 0;
 }
 
-void ubloxGPS::rxEnd()
+bool ubloxGPS::rxEnd()
 {
+  bool visible_msg = false;
+
   if (rx().msg_class == UBX_ACK) {
 
     if (ack_expected && ack_same_as_sent) {
@@ -28,16 +31,16 @@ void ubloxGPS::rxEnd()
 
   } else if (rx().msg_class != UBX_UNK) {
 
-#ifdef NEOGPS_STATS
+#ifdef NMEAGPS_STATS
         statistics.parser_ok++;
 #endif
-    bool event = true;
+    visible_msg = true;
     if (storage) {
       if (reply_expected && (storage == reply)) {
         reply_expected = false;
         reply_received = true;
         reply = (msg_t *) NULL;
-        event = false;
+        visible_msg = false;
       } else {
         storage->msg_class = rx().msg_class;
         storage->msg_id    = rx().msg_id;
@@ -45,16 +48,13 @@ void ubloxGPS::rxEnd()
       }
       storage = (msg_t *) NULL;
     }
-    if (event) {
-      uint16_t val = ((uint16_t)rx().msg_class) +
-                     (((uint16_t)rx().msg_id)<<8);
-      Event::push( Event::RECEIVE_COMPLETED_TYPE, this, val );
-    }
   }
+  return visible_msg;
 }
 
-int ubloxGPS::putchar(char c)
+bool ubloxGPS::decode( char c )
 {
+    bool done = false;
     uint8_t chr = c;
 
     switch ((ubxState_t) rxState) {
@@ -64,7 +64,7 @@ int ubloxGPS::putchar(char c)
           rxState = (rxState_t) UBX_SYNC2;
         else
           // Delegate
-          c = NMEAGPS::putchar( c );
+          done = NMEAGPS::decode( c );
         break;
 
 
@@ -128,7 +128,7 @@ int ubloxGPS::putchar(char c)
       case UBX_CRC_A:
           if (chr != rx().crc_a) {
             rx().msg_class = UBX_UNK;
-#ifdef NEOGPS_STATS
+#ifdef NMEAGPS_STATS
             statistics.parser_crcerr++;
 #endif
           }
@@ -138,30 +138,31 @@ int ubloxGPS::putchar(char c)
       case UBX_CRC_B:
           if (chr != rx().crc_b) {
             rx().msg_class = UBX_UNK;
-#ifdef NEOGPS_STATS
+#ifdef NMEAGPS_STATS
             statistics.parser_crcerr++;
 #endif
           } else {
-            rxEnd();
+            done = rxEnd();
           }
           rxState = (rxState_t) UBX_IDLE;
           break;
 
       default:
           // Delegate
-          c = NMEAGPS::putchar( c );
+          done = NMEAGPS::decode( c );
           break;
     }
 
-    return c;
+    return done;
 }
 
 
 
-void ubloxGPS::wait_for_idle() const
+void ubloxGPS::wait_for_idle()
 {
   // Wait for the input buffer to be emptied
   for (uint8_t waits=0; waits < 8; waits++) {
+    run();
     if (!receiving() || !waiting())
       break;
     Watchdog::delay(16);
@@ -257,7 +258,7 @@ void ubloxGPS::write_P( const msg_t & msg )
 
 bool ubloxGPS::send( const msg_t & msg, msg_t *reply_msg )
 {
-//trace << PSTR("::send - ");
+//trace << PSTR("::send - ") << hex << msg.msg_class << PSTR(" ") << hex << msg.msg_id << PSTR(" ");
   bool ok = true;
 
   write( msg );
