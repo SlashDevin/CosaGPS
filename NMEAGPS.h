@@ -64,8 +64,6 @@ public:
     static const nmea_msg_t NMEA_LAST_MSG  = NMEA_ZDA;
 
 protected:
-    IOStream::Device *m_device; // required for transmitting *to* the device
-
     /**
      * Current parser state
      */
@@ -91,9 +89,8 @@ public:
     /**
      * Constructor
      */
-    NMEAGPS( IOStream::Device *device = (IOStream::Device *) NULL )
+    NMEAGPS()
     {
-      m_device = device;
       rxState = NMEA_IDLE;
     };
 
@@ -240,7 +237,7 @@ public:
         uint16_t heading_cd() const { return hdg.int16_00(); };
         float heading() const { return ((float)heading_cd()) * 0.01; };
 
-    };
+    } __attribute__((packed));
     
     //  Current fix accessor.
     //  /fix/ will be constantly changing as characters are received.
@@ -294,15 +291,15 @@ public:
      * Request the specified NMEA sentence.  Not all devices will respond.
      */
 
-    void poll( nmea_msg_t msg ) const;
+    static void poll( IOStream::Device *device, nmea_msg_t msg );
 
     /**
      * Send a message to the GPS device.
      * The '$' is optional, and the '*' and CS will be added automatically.
      */
 
-    void send( const char *msg ) const;
-    void send_P( const char *msg ) const;
+    static void send( IOStream::Device *device, const char *msg );
+    static void send_P( IOStream::Device *device, const char *msg );
 
 protected:
     //  Current fix
@@ -318,9 +315,6 @@ private:
     bool parseFix( char chr );
     void parseFloat( whole_frac & val, char chr, uint8_t max_decimal );
     void parseDDMM( int32_t & val, char chr );
-
-    bool send_header( const char * & msg ) const;
-    void send_trailer( uint8_t crc ) const;
-};
+} __attribute__((packed));
 
 #endif

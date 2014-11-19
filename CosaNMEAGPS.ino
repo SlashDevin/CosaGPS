@@ -15,7 +15,7 @@ static IOBuffer<UART::BUFFER_MAX> obuf;
 static IOBuffer<UART::BUFFER_MAX> ibuf;
 UART uart1(1, &ibuf, &obuf);
 
-static NMEAGPS gps( &uart1 );
+static NMEAGPS gps;
 static NMEAGPS::gps_fix_t merged;
 
 static clock_t now = 0;
@@ -57,7 +57,7 @@ static void traceIt()
     trace << merged.dateTime_cs;
   } else {
     //  Apparently we don't have a fix yet, ask for a ZDA (Zulu Date and Time)
-    gps.poll( NMEAGPS::NMEA_ZDA );
+    NMEAGPS::poll( &uart1, NMEAGPS::NMEA_ZDA );
   }
   trace << PSTR(",");
 

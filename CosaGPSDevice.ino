@@ -28,9 +28,8 @@ public:
     /**
      * Constructor
      */
-    MyGPS( IOStream::Device *device = (IOStream::Device *) NULL )
-      : gps( device ),
-        frame_received( false )
+    MyGPS()
+      : frame_received( false )
         {}
 
     /**
@@ -48,13 +47,15 @@ public:
     const volatile NMEAGPS::gps_fix_t & fix() const { return gps.fix(); };
 
     bool is_coherent() const { return gps.is_coherent(); }
-    void poll( NMEAGPS::nmea_msg_t msg ) const { gps.poll(msg); };
-    void send( const char *msg ) const { gps.send(msg); };
-    void send_P( const char *msg ) const { gps.send_P(msg); };
+    void poll( IOStream::Device *device, NMEAGPS::nmea_msg_t msg ) const
+      { gps.poll(device,msg); };
+    void send( IOStream::Device *device, const char *msg ) const
+      { gps.send(device,msg); };
+    void send_P( IOStream::Device *device, const char *msg ) const
+      { gps.send_P(device,msg); };
 };
 
-extern UART uart1;
-static MyGPS gps( &uart1 );
+static MyGPS gps;
 
 static IOBuffer<UART::BUFFER_MAX> obuf;
 UART uart1(1, &gps, &obuf);
@@ -75,7 +76,7 @@ static void traceIt()
     trace << gps.merged.dateTime_cs;
   } else {
     //  Apparently we don't have a fix yet, ask for a ZDA (Zulu Date and Time)
-    gps.poll( NMEAGPS::NMEA_ZDA );
+    gps.poll( &uart1, NMEAGPS::NMEA_ZDA );
   }
   trace << PSTR(",");
 

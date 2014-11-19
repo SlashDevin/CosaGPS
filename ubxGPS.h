@@ -11,11 +11,11 @@ class ubloxGPS : public NMEAGPS
 public:
 
     ubloxGPS( IOStream::Device *device )
-      : NMEAGPS( device ),
-        storage( (ublox::msg_t *) NULL ),
+      : storage( (ublox::msg_t *) NULL ),
         reply( (ublox::msg_t *) NULL ),
         reply_expected( false ),
-        ack_expected( false )
+        ack_expected( false ),
+        m_device( device )
       {};
 
     bool decode( char c );
@@ -193,6 +193,7 @@ protected:
     static const ubxState_t UBX_FIRST_STATE = UBX_SYNC2;
     static const ubxState_t UBX_LAST_STATE  = UBX_CRC_B;
 
+    IOStream::Device *m_device;
 };
 
 #endif

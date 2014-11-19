@@ -18,7 +18,7 @@
 
 #include "NMEAGPS.h"
 
-#include "Cosa/IOStream/Driver/UART.hh"
+#include "Cosa/IOStream.hh"
 
 #ifndef CR
 #define CR (13)
@@ -530,7 +530,7 @@ void NMEAGPS::parseDDMM( int32_t & val, char chr )
 }
 
 
-void NMEAGPS::poll( nmea_msg_t msg ) const
+void NMEAGPS::poll( IOStream::Device *device, nmea_msg_t msg )
 {
   //  Only the ublox documentation references talker ID "EI".  
   //  Other manufacturer's devices use "II" and "GP" talker IDs for the GPQ sentence.
@@ -546,7 +546,7 @@ void NMEAGPS::poll( nmea_msg_t msg ) const
   static const char * const poll_msgs[] __PROGMEM = { pm0, pm1, pm2, pm3, pm4, pm5, pm6 };
 
   if ((NMEA_FIRST_MSG <= msg) && (msg <= NMEA_LAST_MSG))
-    send_P( (const char *) pgm_read_word(&poll_msgs[msg-NMEA_FIRST_MSG]) );
+    send_P( device, (const char *) pgm_read_word(&poll_msgs[msg-NMEA_FIRST_MSG]) );
 }
 
 
@@ -557,10 +557,10 @@ static char toHexDigit( uint8_t val )
 }
 
 
-bool NMEAGPS::send_header( const char * & msg ) const
+static bool send_header( IOStream::Device *device, const char * & msg )
 {
   if (msg && *msg) {
-    m_device->putchar('$');
+    device->putchar('$');
     if (*msg == '$')
       msg++;
     return true;
@@ -569,47 +569,47 @@ bool NMEAGPS::send_header( const char * & msg ) const
 }
 
 
-void NMEAGPS::send_trailer( uint8_t crc ) const
+static void send_trailer( IOStream::Device *device, uint8_t crc )
 {
-  m_device->putchar('*');
+  device->putchar('*');
 
   char hexDigit = toHexDigit( crc>>4 );
-  m_device->putchar( hexDigit );
+  device->putchar( hexDigit );
 
   hexDigit = toHexDigit( crc );
-  m_device->putchar( hexDigit );
+  device->putchar( hexDigit );
 
-  m_device->putchar( CR );
-  m_device->putchar( LF );
+  device->putchar( CR );
+  device->putchar( LF );
 }
 
 
-void NMEAGPS::send( const char *msg ) const
+void NMEAGPS::send( IOStream::Device *device, const char *msg )
 {
-  if (send_header( msg )) {
+  if (send_header( device, msg )) {
     uint8_t crc = 0;
     while (*msg) {
       crc ^= *msg;
-      m_device->putchar( *msg++ );
+      device->putchar( *msg++ );
     }
 
-    send_trailer( crc );
+    send_trailer( device, crc );
   }
 }
 
-void NMEAGPS::send_P( const char *msg ) const
+void NMEAGPS::send_P( IOStream::Device *device, const char *msg )
 {
-  if (send_header( msg )) {
+  if (send_header( device, msg )) {
     uint8_t crc = 0;
     for(;;) {
       uint8_t chr = pgm_read_byte(msg);
       if (!chr)
         break;
       crc ^= chr;
-      m_device->putchar( chr );
+      device->putchar( chr );
       msg++;
     }
 
-    send_trailer( crc );
+    send_trailer( device, crc );
   }
 }
