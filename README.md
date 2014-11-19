@@ -43,9 +43,12 @@ merged |= gps_device.fix();
 
 RAM requirements
 =======
-As data is received from the device, various portions of a `fix` are set.  In fact, no buffering RAM is required.  
+As data is received from the device, various portions of a `fix` are modified.  In fact, no buffering RAM is required.  
 Each character affects the internal state machine and may also contribute to a member (e.g., latitude).
-A complete `fix` requires only 31 bytes, and the NMEA state machine requires 7 bytes.
+A complete `fix` requires only 31 bytes, and the NMEA state machine requires 7 bytes, for a total of **38 bytes**.
+
+The `ubloxGPS` derived class adds 17 bytes to handle the more-complicated protocol, plus 5 static bytes 
+for converting GPS time and Time Of Week to UTC, for a total of **56 bytes**.
 
 Examples
 ======
