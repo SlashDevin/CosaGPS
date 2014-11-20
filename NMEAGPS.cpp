@@ -510,6 +510,7 @@ void NMEAGPS::parseDDMM( int32_t & val, char chr )
       deg += 100; // only possible if abs(longitude) >= 100.0 degrees
     val = (deg * 60) + to_binary( valBCD[0] );
     // val now in units of minutes
+    if (chr == '.') return;
   }
   
   if (chr == ',') {
