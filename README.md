@@ -16,7 +16,8 @@ In an attempt to be reusable in a variety of different programming styles, this 
 * buffering of fixes
 * ATTINY environments with very limited RAM and program space
 * optional floating point
-* configurable messsage sets
+* configurable message sets
+* configurable message fields
 
 Data Model
 ==========
@@ -30,6 +31,7 @@ This also facilitates the merging of separately received packets into a coherent
 * heading
 * number of satellites
 * horizontal dilution of precision (HDOP)
+
 Except for `status`, each member is conditionally compiled; any, all, or *no* members can be selected for parsing, storing and fusing.  This allows configuring an application to use the minimum amount of RAM for the particular `fix` members of interest.
 There is a separate validity flag for each of those members.
 Integers are used for all members, retaining full precision of the original data.   
@@ -75,9 +77,9 @@ Examples
 ======
 Several programs are provided to demonstrate how to use the classes in these different styles:
 
-* CosaNMEAGPS - synch, polled, not fused, standard NMEA only
-* CosaGPSDevice - async, polled, fused, standard NMEA only
-* CosaGPSEvent - async, event, fused, standard NMEA only
-* CosaUBXGPS - synch, polled, fused, standard NMEA + ublox proprietary NMEA + ublox protocol
+* [CosaNMEAGPS](CosaNMEAGPS.ino) - synch, polled, not fused, standard NMEA only
+* [CosaGPSDevice](CosaGPSDevice.ino) - async, polled, fused, standard NMEA only
+* [CosaGPSEvent](CosaGPSEvent.ino) - async, event, fused, standard NMEA only
+* [CosaUBXGPS](CosaUBXGPS.ino) - synch, polled, fused, standard NMEA + ublox proprietary NMEA + ublox protocol
 
 Preprocessor symbol `USE_FLOAT` can be used to select integer or floating-point output.
