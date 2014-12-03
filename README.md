@@ -3,7 +3,7 @@ NeoGPS
 
 NeoGPS is a generic GPS parsing library for the Arduino [Cosa](https://github.com/mikaelpatel/Cosa) environment.
 The following protocols are supported:
-* Basic NMEA 0183
+* NMEA 0183
 * u-blox NEO-6
 
 Goals
@@ -16,7 +16,7 @@ In an attempt to be reusable in a variety of different programming styles, this 
 * buffering of fixes
 * ATTINY environments with very limited RAM and program space
 * optional floating point
-* configurable message sets
+* configurable message sets, including hooks for implementing proprietary NMEA messages
 * configurable message fields
 
 Data Model
@@ -67,7 +67,7 @@ while (uart1.available())
       sentenceReceived();
   }
 ```
-Although the `status` can be checked, none of the valid flags will be `true`.
+Although the `fix().status` can be checked, none of the valid flags will be `true`.
 
 The `ubloxGPS` derived class adds 18 bytes to handle the more-complicated protocol, 
 plus 5 static bytes for converting GPS time and Time Of Week to UTC, for a total of 
@@ -77,9 +77,9 @@ Examples
 ======
 Several programs are provided to demonstrate how to use the classes in these different styles:
 
-* [CosaNMEAGPS](CosaNMEAGPS.ino) - synch, polled, not fused, standard NMEA only
+* [CosaNMEAGPS](CosaNMEAGPS.ino) - sync, polled, not fused, standard NMEA only
 * [CosaGPSDevice](CosaGPSDevice.ino) - async, polled, fused, standard NMEA only
 * [CosaGPSEvent](CosaGPSEvent.ino) - async, event, fused, standard NMEA only
-* [CosaUBXGPS](CosaUBXGPS.ino) - synch, polled, fused, standard NMEA + ublox proprietary NMEA + ublox protocol
+* [CosaUBXGPS](CosaUBXGPS.ino) - sync, polled, fused, standard NMEA + ublox proprietary NMEA + ublox protocol
 
 Preprocessor symbol `USE_FLOAT` can be used to select integer or floating-point output.
