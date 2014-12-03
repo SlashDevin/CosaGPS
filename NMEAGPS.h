@@ -19,9 +19,6 @@
  * Lesser General Public License for more details.
  */
 
-// Include core libraries
-#include "Cosa/Time.hh"
-
 /**
  * GPS Parser for NEO-6 Modules.
  *
@@ -38,13 +35,22 @@
  * required if you will be doing time_t-to-clock_t operations.
  */
 
+#include "GPSfix.h"
+
 #define NMEAGPS_PARSE_GGA
 //#define NMEAGPS_PARSE_GLL
 //#define NMEAGPS_PARSE_GSA
 //#define NMEAGPS_PARSE_GSV
 #define NMEAGPS_PARSE_RMC
 //#define NMEAGPS_PARSE_VTG
-#define NMEAGPS_PARSE_ZDA
+//#define NMEAGPS_PARSE_ZDA
+
+#define NMEAGPS_DERIVED_TYPES
+#ifdef NMEAGPS_DERIVED_TYPES
+#define NMEAGPS_VIRTUAL virtual
+#else
+#define NMEAGPS_VIRTUAL
+#endif
 
 class NMEAGPS
 {
@@ -59,11 +65,14 @@ public:
         NMEA_RMC,
         NMEA_VTG,
         NMEA_ZDA,
-    } __attribute__((packed));
+    };
     static const nmea_msg_t NMEA_FIRST_MSG = NMEA_GGA;
     static const nmea_msg_t NMEA_LAST_MSG  = NMEA_ZDA;
 
-protected:
+//protected:
+    //  Current fix
+    struct gps_fix m_fix;
+
     /**
      * Current parser state
      */
@@ -71,14 +80,17 @@ protected:
     uint8_t         fieldIndex;
     uint8_t         chrCount;  // index of current character in current field
     uint8_t         decimal; // digits after the decimal point
-    bool            negative;
+    struct {
+      bool            negative:1;
+      bool            coherent:1;
+    } __attribute__((packed));
 
     enum rxState_t {
         NMEA_IDLE,
         NMEA_RECEIVING_DATA,
         NMEA_RECEIVING_CRC1,
         NMEA_RECEIVING_CRC2
-    };
+    } __attribute__((packed));
     static const uint8_t NMEA_FIRST_STATE = NMEA_IDLE;
     static const uint8_t NMEA_LAST_STATE  = NMEA_RECEIVING_CRC2;
 
@@ -92,6 +104,7 @@ public:
     NMEAGPS()
     {
       rxState = NMEA_IDLE;
+      coherent = true;
     };
 
     /**
@@ -103,141 +116,10 @@ public:
     bool decode( char c );
 
     /**
-     * Most recent NMEA sentence type received.  This is not necessarily
-     * related to the current /fix/.
+     * Most recent NMEA sentence type received.
      */
     enum nmea_msg_t nmeaMessage;
 
-    /**
-     * A structure for holding the two parts of a floating-point number.
-     * This is used for Altitude, Heading and Speed, which require more
-     * significant digits than a 16-bit number.  The decimal point is
-     * used as a field separator for these two parts.  This is more efficient
-     * than calling the 32-bit math subroutines on a single scaled long integer.
-     */
-
-    struct whole_frac {
-      int16_t whole;
-      int16_t frac;
-      void init() { whole = 0; frac = 0; };
-      int32_t int32_00() const { return ((int32_t)whole) * 100L + frac; };
-      int16_t int16_00() const { return whole * 100 + frac; };
-      int32_t int32_000() const { return whole * 1000L + frac; };
-    };
-
-    /**
-     * The current fix status or mode of the GPS device.  Unfortunately, the NMEA
-     * sentences are a little inconsistent in their use of "status" and "mode".
-     * Both fields are mapped onto this enumerated type.  Be aware that
-     * different manufacturers interpret them differently.  This can cause 
-     * problems in sentences which include both types (e.g., GPGLL).
-     */
-     
-    enum gps_fix_status_t {
-      GPS_FIX_NONE = 0,
-      GPS_FIX_STD  = 1,
-      GPS_FIX_DGPS = 2,
-      GPS_FIX_EST  = 6
-    } __attribute__((packed));
-
-    /**
-     * A structure for holding a GPS fix: time, position, velocity.
-     */
-
-    struct gps_fix_t {
-        int32_t       lat;  // degree * 1e7, negative is South
-        int32_t       lon;  // degree * 1e7, negative is West
-        whole_frac    alt;  // m*100
-        whole_frac    spd;  // knots*1000
-        whole_frac    hdg;  // degrees*100
-        struct time_t dateTime;
-        uint8_t       dateTime_cs; // hundredths of a second
-        union {
-          struct {
-            gps_fix_status_t  status    :3;
-            uint8_t           satellites:5;
-          } __attribute__((packed));
-          uint8_t status_satellites;
-        } __attribute__((packed));
-        uint8_t           hdop;
-
-        //  Flags to indicate which members of this fix are valid.
-
-        union gps_fix_valid_t {
-          uint8_t as_byte;
-          struct {
-            bool dateTime:1;
-            bool location:1;
-            bool altitude:1;
-            bool speed:1;
-            bool heading:1;
-          } __attribute__((packed));
-        } __attribute__((packed))
-            valid;
-
-        gps_fix_t() { init(); };
-
-        void init()
-        {
-          lat = lon = 0;
-          alt.init();
-          spd.init();
-          hdg.init();
-          status_satellites = 0;
-          hdop = 0;
-          valid.as_byte = 0;
-        };
-
-        /**
-         * Merge valid fields from the right fix into
-         *  a "fused" fix on the left (i.e., /this/).
-         */
-
-        gps_fix_t & operator |=( const gps_fix_t & r )
-        {
-          if (r.status != GPS_FIX_NONE)
-            status = r.status;
-          if (r.hdop != 0)
-            hdop = r.hdop;
-          if (r.satellites != 0)
-            satellites = r.satellites;
-          if (r.valid.dateTime)
-            dateTime = r.dateTime;
-          if (r.valid.location) {
-            lat = r.lat;
-            lon = r.lon;
-          }
-          if (r.valid.altitude)
-            alt = r.alt;
-          if (r.valid.heading)
-            hdg = r.hdg;
-          if (r.valid.speed)
-            spd = r.spd;
-          valid.as_byte |= r.valid.as_byte;
-          return *this;
-        }
-
-        //  Convenience accessors for fix members.
-
-        int32_t latitudeL() const { return lat; };
-        float latitudeF() const { return ((float) lat) * 1.0e-7; };
-        double latitude() const { return ((double) lat) * 1.0e-7; };
-
-        int32_t longitudeL() const { return lon; };
-        float longitudeF() const { return ((float) lon) * 1.0e-7; };
-        double longitude() const { return ((double) lon) * 1.0e-7; };
-
-        int32_t altitude_cm() const { return alt.int32_00(); };
-        float altitudeF() const { return ((float) altitude_cm()) * 0.01; };
-        double altitude() const { return ((double) altitude_cm()) * 0.01; };
-
-        uint32_t speed_mkn() const { return spd.int32_000(); };
-        float speed() const { return ((float)speed_mkn()) * 0.001; };
-
-        uint16_t heading_cd() const { return hdg.int16_00(); };
-        float heading() const { return ((float)heading_cd()) * 0.01; };
-
-    } __attribute__((packed));
     
     //  Current fix accessor.
     //  /fix/ will be constantly changing as characters are received.
@@ -248,7 +130,7 @@ public:
     //  take a snapshot while it is_coherent, and then use the snapshot
     //  later.
 
-    const struct gps_fix_t & fix() const { return m_fix; };
+    const struct gps_fix & fix() const { return m_fix; };
 
     //  Determine whether the members of /fix/ are "currently" coherent.
     //  It will return true when a complete sentence and the CRC characters 
@@ -258,7 +140,7 @@ public:
     //  If NMEAGPS processes characters in UART interrupts, /is_coherent/
     //  could change at any time.
 
-    bool is_coherent() const { return (m_fix.valid.as_byte != 0); }
+    bool is_coherent() const { return coherent; }
 
     //  Notes regarding the volatile /fix/:
     //
@@ -299,22 +181,163 @@ public:
      */
 
     static void send( IOStream::Device *device, const char *msg );
-    static void send_P( IOStream::Device *device, const char *msg );
-
-protected:
-    //  Current fix
-    struct gps_fix_t m_fix;
+    static void send( IOStream::Device *device, str_P msg );
 
 private:
     void rxBegin();
     void rxEnd( bool ok );
-    
-    bool parseField( char chr );
-    bool parseCommand( char chr );
-    bool parseTimeField( char chr );
+
+protected:
+public:
+    struct msg_table_t {
+      uint8_t offset;
+      const msg_table_t *previous;
+      uint8_t size;
+      const char * const *table;
+    };
+
+    static const char * const std_nmea[] __PROGMEM;
+    static const uint8_t std_nmea_size;
+    static const msg_table_t nmea_msg_table __PROGMEM;
+
+    NMEAGPS_VIRTUAL const msg_table_t *msg_table() const { return &nmea_msg_table; };
+
+    enum cmd_char_t { CMD_CHR_INVALID, CMD_CHR_OK, CMD_MATCH };
+
+    cmd_char_t parseCommand( char c );
+
+    NMEAGPS_VIRTUAL bool parseField( char chr );
+
+#define PARSE_FIELD(i,f) case i: return parse##f( chr );
+
+#ifdef GPS_FIX_TIME
+#define CASE_TIME(i) PARSE_FIELD(i,Time)
+    bool parseTime( char chr );
+#else
+#define CASE_TIME(i)
+#endif
+
+#ifdef GPS_FIX_DATE
+#define CASE_DATE(i) PARSE_FIELD(i,DDMMYY)
+    bool parseDDMMYY( char chr );
+#else
+#define CASE_DATE(i)
+#endif
+
+#define CASE_FIX(i) PARSE_FIELD(i,Fix)
     bool parseFix( char chr );
-    void parseFloat( whole_frac & val, char chr, uint8_t max_decimal );
-    void parseDDMM( int32_t & val, char chr );
+
+#ifdef GPS_FIX_LOCATION
+#define CASE_LOC(i) PARSE_FIELD(i,Lat) \
+PARSE_FIELD(i+1,NS); \
+PARSE_FIELD(i+2,Lon); \
+PARSE_FIELD(i+3,EW);
+
+    bool parseDDDMM( int32_t & val, char chr );
+
+    bool parseLat( char chr )
+    {
+      return parseDDDMM( m_fix.lat, chr );
+    }
+
+    bool parseNS( char chr )
+    {
+      if (chr == 'S')
+        m_fix.lat = -m_fix.lat;
+      return true;
+    }
+
+    bool parseLon( char chr )
+    {
+      return parseDDDMM( m_fix.lon, chr );
+    }
+
+    bool parseEW( char chr )
+    {
+      if (chr == 'W')
+        m_fix.lon = -m_fix.lon;
+      m_fix.valid.location = true;
+      return true;
+    }
+#else
+#define CASE_LOC(i)
+#endif
+
+#ifdef GPS_FIX_SPEED
+#define CASE_SPEED(i) PARSE_FIELD(i,Speed)
+
+    bool parseSpeed( char chr )
+    {
+      return m_fix.valid.speed = parseFloat( m_fix.spd, chr, 3 );
+    }
+#else
+#define CASE_SPEED(i)
+#endif
+
+#ifdef GPS_FIX_HEADING
+#define CASE_HEADING(i) PARSE_FIELD(i,Heading)
+
+    bool parseHeading( char chr )
+    {
+      return m_fix.valid.heading = parseFloat( m_fix.hdg, chr, 2 );
+    }
+#else
+#define CASE_HEADING(i)
+#endif
+
+#ifdef GPS_FIX_ALTITUDE
+#define CASE_ALT(i) PARSE_FIELD(i,Alt)
+
+    bool parseAlt(char chr )
+    {
+      return m_fix.valid.altitude = parseFloat( m_fix.alt, chr, 2 );
+    }
+#else
+#define CASE_ALT(i)
+#endif
+
+#ifdef GPS_FIX_SATELLITES
+#define CASE_SAT(i) PARSE_FIELD(i,Satellites)
+
+    bool parseSatellites( char chr )
+    {
+      if (chrCount == 0)
+        m_fix.satellites = 0;
+      if (chr != ',')
+        m_fix.satellites = m_fix.satellites*10 + (chr - '0');
+      else
+        m_fix.valid.satellites = true;
+      return true;
+    }
+#else
+#define CASE_SAT(i)
+#endif
+
+#ifdef GPS_FIX_HDOP
+#define CASE_HDOP(i) PARSE_FIELD(i,HDOP)
+
+    bool parseHDOP( char chr )
+    {
+      if (chrCount == 0) {
+        decimal = 0;
+        m_fix.hdop = 0;
+      }
+      if (chr == ',') {
+        m_fix.valid.hdop = true;
+        while (decimal++ <= 3)
+          m_fix.hdop *= 10;
+      } else if (chr == '.')
+        decimal = 1;
+      else if (decimal++ <= 3)
+        m_fix.hdop = m_fix.hdop*10 + (chr - '0');
+      return true;
+    }
+#else
+#define CASE_HDOP(i)
+#endif
+
+    bool parseFloat( gps_fix::whole_frac & val, char chr, uint8_t max_decimal );
+
 } __attribute__((packed));
 
 #endif

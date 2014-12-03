@@ -1,23 +1,55 @@
 #ifndef _UBXGPS_H_
 #define _UBXGPS_H_
 
-#include "NMEAGPS.h"
-#include "ubxmsg.h"
-
 #include <avr/pgmspace.h>
 
-class ubloxGPS : public NMEAGPS
+#define UBLOX_PARSE_NMEA
+#ifdef UBLOX_PARSE_NMEA
+#define UBLOX_INHERITANCE : public NMEAGPS
+
+#include "NMEAGPS.h"
+#ifndef NMEAGPS_DERIVED_TYPES
+#error You must "#define NMEAGPS_DERIVED_TYPES" in NMEAGPS.h!
+#endif
+
+#define NMEAGPS_PARSE_PUBX_00
+#define NMEAGPS_PARSE_PUBX_04
+
+#else
+#define UBLOX_INHERITANCE
+#include "GPSfix.h"
+#endif
+
+#define UBLOX_PARSE_UBLOX
+#ifdef  UBLOX_PARSE_UBLOX
+#include "ubxmsg.h"
+#endif
+
+class ubloxGPS UBLOX_INHERITANCE
 {
+    ubloxGPS();
+    ubloxGPS( const ubloxGPS & );
+
 public:
 
     ubloxGPS( IOStream::Device *device )
-      : storage( (ublox::msg_t *) NULL ),
+      :
+#ifdef UBLOX_PARSE_UBLOX
+        storage( (ublox::msg_t *) NULL ),
         reply( (ublox::msg_t *) NULL ),
         reply_expected( false ),
         ack_expected( false ),
+#endif
         m_device( device )
       {};
 
+#ifdef UBLOX_PARSE_UBLOX
+    /**
+     * Process one character from a ublox device.  The internal state machine
+     * tracks what part of the NMEA/UBX packet has been received so far.  As the
+     * packet is received, members of the /fix/ structure are updated.  
+     * @return true when new /fix/ data is available and coherent.
+     */
     bool decode( char c );
 
     // These must be set when available
@@ -87,8 +119,24 @@ public:
     };
 
 private:
-    ubloxGPS(); // NO!
-    ubloxGPS( const ubloxGPS & ); // NO!
+#ifdef UBLOX_PARSE_NMEA
+#define UBX_IDLE_VALUE NMEA_IDLE
+#define UBX_FIRST_VALUE NMEA_LAST_STATE+1
+#else
+#define UBX_IDLE_VALUE 0
+#define UBX_FIRST_VALUE 1
+#endif
+
+    enum ubxState_t {
+        UBX_IDLE  = UBX_IDLE_VALUE,
+        UBX_SYNC2 = UBX_FIRST_VALUE,
+        UBX_HEAD,
+        UBX_RECEIVING_DATA,
+        UBX_CRC_A,
+        UBX_CRC_B
+    }  __attribute__((packed));
+    static const ubxState_t UBX_FIRST_STATE = UBX_SYNC2;
+    static const ubxState_t UBX_LAST_STATE  = UBX_CRC_B;
 
     inline void write
       ( uint8_t c, uint8_t & crc_a, uint8_t & crc_b ) const
@@ -109,7 +157,7 @@ private:
     }
     bool receiving() const
     {
-      return (rxState != NMEA_IDLE) || (m_device && m_device->available());
+      return (rxState != UBX_IDLE) || (m_device && m_device->available());
     }
 
     //  This method is called from inside /wait_for_idle/.
@@ -182,18 +230,40 @@ private:
 protected:
     rx_msg_t & rx() { return m_rx_msg; }
 
-    enum ubxState_t {
-        UBX_IDLE  = NMEA_IDLE,
-        UBX_SYNC2 = NMEA_LAST_STATE+1,
-        UBX_HEAD,
-        UBX_RECEIVING_DATA,
-        UBX_CRC_A,
-        UBX_CRC_B
-    }  __attribute__((packed));
-    static const ubxState_t UBX_FIRST_STATE = UBX_SYNC2;
-    static const ubxState_t UBX_LAST_STATE  = UBX_CRC_B;
+#endif
 
     IOStream::Device *m_device;
+
+#ifdef UBLOX_PARSE_NMEA
+public:
+
+    /** ublox proprietary NMEA message types. */
+    enum pubx_msg_t {
+        PUBX_00 = NMEA_LAST_MSG+1,
+        PUBX_04 = PUBX_00+4
+    };
+    static const nmea_msg_t PUBX_FIRST_MSG = (nmea_msg_t) PUBX_00;
+    static const nmea_msg_t PUBX_LAST_MSG  = (nmea_msg_t) PUBX_04;
+
+protected:
+    static const char * const ublox_nmea[] __PROGMEM;
+    static const uint8_t ublox_nmea_size;
+    static const msg_table_t ublox_msg_table __PROGMEM;
+
+    const msg_table_t *msg_table() const { return &ublox_msg_table; };
+
+    cmd_char_t parseCommand( char c );
+    bool parseField( char chr );
+
+#else
+public:
+    const struct gps_fix & fix() const { return m_fix; };
+private:
+    struct gps_fix m_fix;
+    ubxState_t rxState;
+    typedef ubxState_t rxState_t;
+    uint8_t         chrCount;  // index of current character in current field
+#endif
 };
 
 #endif

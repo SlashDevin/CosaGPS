@@ -1,5 +1,7 @@
 #include "ubxGPS.h"
 
+#ifdef UBLOX_PARSE_UBLOX
+
 using namespace ublox;
 
 bool ublox::configNMEA( ubloxGPS &gps, NMEAGPS::nmea_msg_t msgType, uint8_t rate )
@@ -23,3 +25,5 @@ bool ublox::configNMEA( ubloxGPS &gps, NMEAGPS::nmea_msg_t msgType, uint8_t rate
 
   return gps.send( cfg_msg_t( UBX_NMEA, msg_id, rate ) );
 }
+
+#endif

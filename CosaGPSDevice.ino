@@ -22,7 +22,7 @@ protected:
     NMEAGPS gps;
 
 public:
-    NMEAGPS::gps_fix_t merged;
+    gps_fix merged;
     volatile bool frame_received;
 
     /**
@@ -44,15 +44,15 @@ public:
       return c;
     };
 
-    const volatile NMEAGPS::gps_fix_t & fix() const { return gps.fix(); };
+    const volatile gps_fix & fix() const { return gps.fix(); };
 
     bool is_coherent() const { return gps.is_coherent(); }
     void poll( IOStream::Device *device, NMEAGPS::nmea_msg_t msg ) const
       { gps.poll(device,msg); };
     void send( IOStream::Device *device, const char *msg ) const
       { gps.send(device,msg); };
-    void send_P( IOStream::Device *device, const char *msg ) const
-      { gps.send_P(device,msg); };
+    void send( IOStream::Device *device, str_P msg ) const
+      { gps.send(device,msg); };
 };
 
 static MyGPS gps;
@@ -69,7 +69,7 @@ static clock_t lastTrace = 0;
 
 static void traceIt()
 {
-  if (gps.merged.valid.dateTime) {
+  if (gps.merged.valid.date || gps.merged.valid.time) {
     trace << gps.merged.dateTime << PSTR(".");
     if (gps.merged.dateTime_cs < 10)
       trace << '0';
@@ -145,7 +145,7 @@ void loop()
 {
   bool new_fix = false;
   bool new_safe_fix = false;
-  NMEAGPS::gps_fix_t safe_fix;
+  gps_fix safe_fix;
 
 
   synchronized {
@@ -155,10 +155,11 @@ void loop()
       // This can be susceptible to processing delays; missing an /is_coherent/
       // means that some data may not get copied into safe_fix.
       if (gps.is_coherent()) {
-        if (gps.fix().valid.dateTime && gps.merged.valid.dateTime &&
+        if (gps.fix().valid.date && gps.fix().valid.time &&
+            gps.merged.valid.date && gps.merged.valid.time &&
             (gps.merged.dateTime != *const_cast<const time_t *>(&gps.fix().dateTime)))
           new_fix = true;
-        safe_fix = *const_cast<const NMEAGPS::gps_fix_t *>(&gps.fix());
+        safe_fix = *const_cast<const gps_fix *>(&gps.fix());
         new_safe_fix = true;
       }
     }

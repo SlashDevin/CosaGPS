@@ -15,7 +15,7 @@ class MyGPS : public IOStream::Device, public Event::Handler
 {
 protected:
   NMEAGPS gps;
-  NMEAGPS::gps_fix_t merged;
+  gps_fix merged;
 
 public:
     /**
@@ -27,17 +27,18 @@ public:
     {
       bool new_fix = false;
       bool new_safe_fix = false;
-      NMEAGPS::gps_fix_t safe_fix;
+      gps_fix safe_fix;
 
       // This is susceptible to event processing delays; other kinds of
       // events may delay getting to /fix/ while it is still coherent.
 
       synchronized {
         if (gps.is_coherent()) {
-          if (gps.fix().valid.dateTime && merged.valid.dateTime &&
+          if (gps.fix().valid.date && gps.fix().valid.time &&
+              merged.valid.date && merged.valid.time &&
               (merged.dateTime != *const_cast<const time_t *>(&gps.fix().dateTime)))
             new_fix = true;
-          safe_fix = *const_cast<const NMEAGPS::gps_fix_t *>(&gps.fix());
+          safe_fix = *const_cast<const gps_fix *>(&gps.fix());
           new_safe_fix = true;
         }
       }
@@ -60,7 +61,7 @@ public:
       return c;
     };
 
-    const NMEAGPS::gps_fix_t & fix() const { return merged; };
+    const gps_fix & fix() const { return merged; };
 };
 
 static MyGPS gps;
@@ -77,9 +78,9 @@ static clock_t lastTrace = 0;
 
 static void traceIt()
 {
-  const NMEAGPS::gps_fix_t & fix = gps.fix();
+  const gps_fix & fix = gps.fix();
 
-  if (fix.valid.dateTime) {
+  if (fix.valid.date || fix.valid.time) {
     time_t copy = fix.dateTime;
     trace << copy << PSTR(".");
     if (fix.dateTime_cs < 10)

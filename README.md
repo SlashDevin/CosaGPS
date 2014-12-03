@@ -15,23 +15,26 @@ In an attempt to be reusable in a variety of different programming styles, this 
 * additional protocols from same device
 * buffering of fixes
 * ATTINY environments with very limited RAM and program space
-* floating point optional
+* optional floating point
+* configurable messsage sets
 
 Data Model
 ==========
 Rather than holding onto individual fields, the concept of a **fix** is used to group data members of the GPS acquisition.
-This also facilitates the merging of separately received packets into a coherent position.  The members of `gps_fix_t` include 
+This also facilitates the merging of separately received packets into a coherent position.  The members of `gps_fix` include 
+* fix status
 * time
 * latitude and longitude
 * altitude
 * speed
 * heading
-* fix status
 * number of satellites
 * horizontal dilution of precision (HDOP)
-There is a separate validity flag for each of those members.  Integers are used for all
-members, retaining full precision of the original data.  Optional floating-point accessors are provided.
-Operators are defined which allow the developer to merge two fixes:
+Except for `status`, each member is conditionally compiled; any, all, or *no* members can be selected for parsing, storing and fusing.  This allows configuring an application to use the minimum amount of RAM for the particular `fix` members of interest.
+There is a separate validity flag for each of those members.
+Integers are used for all members, retaining full precision of the original data.   
+Optional floating-point accessors are provided.
+`fix` operators are defined which allow the developer to merge two fixes:
 ```
 NMEAGPS gps_device;
 gps_fix_t merged;
@@ -43,13 +46,38 @@ merged |= gps_device.fix();
 
 RAM requirements
 =======
-As data is received from the device, various portions of a `fix` are modified.  In fact, no buffering RAM is required.  
-Each character affects the internal state machine and may also contribute to a member (e.g., latitude).
-A complete `fix` requires only 31 bytes, and the NMEA state machine requires 7 bytes, for a total of **38 bytes**.
+As data is received from the device, various portions of a `fix` are modified.  In 
+fact, no buffering RAM is required.  
+Each character affects the internal state machine and may also contribute to a data 
+member (e.g., latitude).
+A fully-configured `fix` requires only 32 bytes, and the NMEA state machine requires 
+7 bytes, for a total of **39 bytes**.  The minimally-configured `fix` requires only 
+2 bytes, for a total of only **10 bytes** (structure alignment may add 1 byte).
 
-The `ubloxGPS` derived class adds 17 bytes to handle the more-complicated protocol, plus 5 static bytes 
-for converting GPS time and Time Of Week to UTC, for a total of **56 bytes**.
+For example, if your application only requires an accurate one pulse-per-second, you 
+can configure it to parse *no* sentence types and retain *no* data members.  Even 
+though no sentences are parsed and no data members are stored, the application will 
+still receive a `decoded` message type once per second:
+```
+while (uart1.available())
+  if (gps.decode( uart1.getchar() )) {
+    if (gps.nmeaMessage == NMEAGPS::NMEA_RMC)
+      sentenceReceived();
+  }
+```
+Although the `status` can be checked, none of the valid flags will be `true`.
+
+The `ubloxGPS` derived class adds 18 bytes to handle the more-complicated protocol, 
+plus 5 static bytes for converting GPS time and Time Of Week to UTC, for a total of 
+**57 bytes**.
 
 Examples
 ======
-Several programs are provided to demonstrate how to use the classes in these different styles.
+Several programs are provided to demonstrate how to use the classes in these different styles:
+
+* CosaNMEAGPS - synch, polled, not fused, standard NMEA only
+* CosaGPSDevice - async, polled, fused, standard NMEA only
+* CosaGPSEvent - async, event, fused, standard NMEA only
+* CosaUBXGPS - synch, polled, fused, standard NMEA + ublox proprietary NMEA + ublox protocol
+
+Preprocessor symbol `USE_FLOAT` can be used to select integer or floating-point output.
