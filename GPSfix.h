@@ -33,6 +33,9 @@ public:
     int32_t int32_00() const { return ((int32_t)whole) * 100L + frac; };
     int16_t int16_00() const { return whole * 100 + frac; };
     int32_t int32_000() const { return whole * 1000L + frac; };
+    float float_00() const { return ((float)whole) + ((float)frac)*0.01; };
+    double double_00() const { return ((double)whole) + ((double)frac)*0.01; };
+    float float_000() const { return ((float)whole) + ((float)frac)*0.001; };
   } __attribute__((packed));
 
   /**
@@ -53,25 +56,25 @@ public:
 #endif
 
 #ifdef GPS_FIX_ALTITUDE
-    whole_frac    alt;
+    whole_frac    alt; // .01
 
     int32_t altitude_cm() const { return alt.int32_00(); };
-    float altitudeF() const { return ((float) altitude_cm()) * 0.01; };
-    double altitude() const { return ((double) altitude_cm()) * 0.01; };
+    float altitudeF() const { return alt.float_00(); };
+    double altitude() const { return alt.double_00(); };
 #endif
 
 #ifdef GPS_FIX_SPEED
-    whole_frac    spd;
+    whole_frac    spd; // .001
 
     uint32_t speed_mkn() const { return spd.int32_000(); };
-    float speed() const { return ((float)speed_mkn()) * 0.001; };
+    float speed() const { return spd.float_000(); };
 #endif
 
 #ifdef GPS_FIX_HEADING
-    whole_frac    hdg;
+    whole_frac    hdg; //  .01
 
     uint16_t heading_cd() const { return hdg.int16_00(); };
-    float heading() const { return ((float)heading_cd()) * 0.01; };
+    float heading() const { return hdg.float_00(); };
 #endif
 
 #ifdef GPS_FIX_HDOP

@@ -27,15 +27,19 @@
  * Only NMEA messages of types GGA, GLL, RMC, VTG, ZDA are parsed.
  */
 
+#include "GPSfix.h"
+
 /**
  * Enable/disable the parsing of specific sentences.
  *
- * Note: Only RMC and ZDA contain date information.  Other
+ * Configuring out a sentence prevents its fields from being parsed.
+ * However, the sentence type will still be recognized by /decode/ and 
+ * stored in member /nmeaMessage/.  No valid flags will be true.
+ *
+ * Only RMC and ZDA contain date information.  Other
  * sentences contain time information.  Both date and time are 
  * required if you will be doing time_t-to-clock_t operations.
  */
-
-#include "GPSfix.h"
 
 #define NMEAGPS_PARSE_GGA
 //#define NMEAGPS_PARSE_GLL
@@ -45,6 +49,12 @@
 //#define NMEAGPS_PARSE_VTG
 //#define NMEAGPS_PARSE_ZDA
 
+/**
+ * Configuration item for allowing derived types of NMEAGPS.
+ * If defined, virtuals are used, with a slight size and time penalty.
+ * If you derived classes from NMEAGPS, you must define NMEAGPS_DERIVED_TYPES.
+ */
+ 
 #define NMEAGPS_DERIVED_TYPES
 #ifdef NMEAGPS_DERIVED_TYPES
 #define NMEAGPS_VIRTUAL virtual
@@ -69,7 +79,7 @@ public:
     static const nmea_msg_t NMEA_FIRST_MSG = NMEA_GGA;
     static const nmea_msg_t NMEA_LAST_MSG  = NMEA_ZDA;
 
-//protected:
+protected:
     //  Current fix
     struct gps_fix m_fix;
 
@@ -107,13 +117,15 @@ public:
       coherent = true;
     };
 
+    enum decode_t { DECODE_CHR_INVALID, DECODE_CHR_OK, DECODE_COMPLETED };
+
     /**
      * Process one character of an NMEA GPS sentence.  The  internal state machine
      * tracks what part of the sentence has been received so far.  As the
      * sentence is received, members of the /fix/ structure are updated.  
      * @return true when new /fix/ data is available and coherent.
      */
-    bool decode( char c );
+    decode_t decode( char c );
 
     /**
      * Most recent NMEA sentence type received.
@@ -159,10 +171,10 @@ public:
     //    // Access valid members of /safe_fix/ anywhere, any time.
     //  }
 
+#ifdef NMEAGPS_STATS
     /**
      * Internal GPS parser statistics.
      */
-#ifdef NMEAGPS_STATS
     struct {
         uint8_t  parser_ok;     // count of successfully parsed packets
         uint8_t  parser_crcerr; // count of CRC errors
@@ -188,7 +200,16 @@ private:
     void rxEnd( bool ok );
 
 protected:
-public:
+    /*
+     * Table entry for NMEA sentence type string and its offset
+     * in enumerated nmea_msg_t.  Proprietary sentences can be implemented
+     * in derived classes by adding a second table.  Additional tables
+     * can be singly-linked through the /previous/ member.  The instantiated
+     * class's table is the head, and should be returned by the derived
+     * /msg_table/ function.  Tables should be sorted by the commonality
+     * of the starting characters: alphabetical would work but is not strictly
+     * required.
+     */
     struct msg_table_t {
       uint8_t offset;
       const msg_table_t *previous;
@@ -202,14 +223,25 @@ public:
 
     NMEAGPS_VIRTUAL const msg_table_t *msg_table() const { return &nmea_msg_table; };
 
-    enum cmd_char_t { CMD_CHR_INVALID, CMD_CHR_OK, CMD_MATCH };
+    /*
+     * Use the list of tables to recognize an NMEA sentence type.
+     */
+    decode_t parseCommand( char c );
 
-    cmd_char_t parseCommand( char c );
-
+    /*
+     * Depending on the NMEA sentence type, parse one field of the expected type.
+     */
     NMEAGPS_VIRTUAL bool parseField( char chr );
 
+    /*
+     *  Helper macro for conditionally parsing a field.
+     */
 #define PARSE_FIELD(i,f) case i: return parse##f( chr );
 
+    /*
+     * Conditional macros for parsing the primary field types.
+     */
+     
 #ifdef GPS_FIX_TIME
 #define CASE_TIME(i) PARSE_FIELD(i,Time)
     bool parseTime( char chr );

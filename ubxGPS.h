@@ -3,7 +3,13 @@
 
 #include <avr/pgmspace.h>
 
+/*
+ * Enable/disable Neo-6 protocols.  Either or both can be enabled
+ */
 #define UBLOX_PARSE_NMEA
+#define UBLOX_PARSE_UBLOX
+
+
 #ifdef UBLOX_PARSE_NMEA
 #define UBLOX_INHERITANCE : public NMEAGPS
 
@@ -20,44 +26,77 @@
 #include "GPSfix.h"
 #endif
 
-#define UBLOX_PARSE_UBLOX
 #ifdef  UBLOX_PARSE_UBLOX
 #include "ubxmsg.h"
 #endif
 
 class ubloxGPS UBLOX_INHERITANCE
 {
-    ubloxGPS();
     ubloxGPS( const ubloxGPS & );
 
 public:
 
+#ifndef UBLOX_PARSE_NMEA
+    enum decode_t { DECODE_CHR_INVALID, DECODE_CHR_OK, DECODE_COMPLETED };
+#endif
+
+#ifndef UBLOX_PARSE_UBLOX
+    ubloxGPS() {};
+#else
     ubloxGPS( IOStream::Device *device )
       :
-#ifdef UBLOX_PARSE_UBLOX
         storage( (ublox::msg_t *) NULL ),
         reply( (ublox::msg_t *) NULL ),
         reply_expected( false ),
         ack_expected( false ),
-#endif
         m_device( device )
       {};
 
-#ifdef UBLOX_PARSE_UBLOX
     /**
      * Process one character from a ublox device.  The internal state machine
      * tracks what part of the NMEA/UBX packet has been received so far.  As the
      * packet is received, members of the /fix/ structure are updated.  
      * @return true when new /fix/ data is available and coherent.
      */
-    bool decode( char c );
+    decode_t decode( char c );
+
+    /**
+     * Received message header.  Payload is only stored if /storage/ is 
+     * overridden for that message type.
+     */
+    ublox::msg_t & rx() { return m_rx_msg; }
 
     // These must be set when available
     static uint8_t leap_seconds;
     static clock_t start_of_week;
 
-    clock_t offset( uint32_t time_of_week )
+    static clock_t offset( uint32_t time_of_week )
       { return (clock_t) (start_of_week + time_of_week - leap_seconds); }
+
+    /**
+     *  Set fix date/time members from a GPS time-of-week in milliseconds.
+     *  Requires /leap_seconds/ and /start_of_week/.
+     **/
+    void from_TOWms( uint32_t time_of_week_ms )
+    {
+      time_of_week_ms /= 10UL;
+      clock_t tow_s = time_of_week_ms/100UL;
+      m_fix.dateTime = offset( tow_s ); 
+      m_fix.dateTime_cs = ((uint8_t)(time_of_week_ms - tow_s*100UL)) % 100;
+      m_fix.valid.time = true;
+      m_fix.valid.date = true;
+    }
+
+    static void setup_start_of_week( time_t & dt )
+      {
+        dt.set_day();
+        start_of_week =
+          (clock_t) dt  -  
+          (clock_t) (((dt.day*24L + 
+                       dt.hours)*60L + 
+                       dt.minutes)*60L +
+                       dt.seconds);
+      }
 
     /**
      * Send a message (non-blocking).
@@ -118,7 +157,6 @@ public:
       return send( poll_msg, reply_msg );
     };
 
-private:
 #ifdef UBLOX_PARSE_NMEA
 #define UBX_IDLE_VALUE NMEA_IDLE
 #define UBX_FIRST_VALUE NMEA_LAST_STATE+1
@@ -126,6 +164,7 @@ private:
 #define UBX_IDLE_VALUE 0
 #define UBX_FIRST_VALUE 1
 #endif
+protected:
 
     enum ubxState_t {
         UBX_IDLE  = UBX_IDLE_VALUE,
@@ -137,6 +176,17 @@ private:
     }  __attribute__((packed));
     static const ubxState_t UBX_FIRST_STATE = UBX_SYNC2;
     static const ubxState_t UBX_LAST_STATE  = UBX_CRC_B;
+
+#ifndef UBLOX_PARSE_NMEA
+public:
+    const struct gps_fix & fix() const { return m_fix; };
+private:
+    ubxState_t rxState;
+    typedef ubxState_t rxState_t;
+    uint8_t         chrCount;  // index of current character in current field
+protected:
+    struct gps_fix m_fix;
+#endif
 
     inline void write
       ( uint8_t c, uint8_t & crc_a, uint8_t & crc_b ) const
@@ -227,12 +277,9 @@ private:
     static const uint8_t SYNC_1 = 0xB5;
     static const uint8_t SYNC_2 = 0x62;
 
-protected:
-    rx_msg_t & rx() { return m_rx_msg; }
+    IOStream::Device *m_device;
 
 #endif
-
-    IOStream::Device *m_device;
 
 #ifdef UBLOX_PARSE_NMEA
 public:
@@ -252,17 +299,9 @@ protected:
 
     const msg_table_t *msg_table() const { return &ublox_msg_table; };
 
-    cmd_char_t parseCommand( char c );
+    decode_t parseCommand( char c );
     bool parseField( char chr );
 
-#else
-public:
-    const struct gps_fix & fix() const { return m_fix; };
-private:
-    struct gps_fix m_fix;
-    ubxState_t rxState;
-    typedef ubxState_t rxState_t;
-    uint8_t         chrCount;  // index of current character in current field
 #endif
 };
 

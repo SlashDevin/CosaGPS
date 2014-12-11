@@ -3,11 +3,11 @@
   uart1 should be connected to the GPS device.
 */
 
-#include "Cosa/RTC.hh"
 #include "Cosa/Trace.hh"
+#include "Cosa/Event.hh"
 #include "Cosa/IOBuffer.hh"
 #include "Cosa/IOStream/Driver/UART.hh"
-#include "Cosa/Watchdog.hh"
+#include "Cosa/Power.hh"
 
 #include "NMEAGPS.h"
 
@@ -25,29 +25,28 @@ public:
 
     void on_event( uint8_t, uint16_t )
     {
-      bool new_fix = false;
       bool new_safe_fix = false;
-      gps_fix safe_fix;
+      static gps_fix safe_fix;
 
       // This is susceptible to event processing delays; other kinds of
       // events may delay getting to /fix/ while it is still coherent.
 
       synchronized {
         if (gps.is_coherent()) {
-          if (gps.fix().valid.date && gps.fix().valid.time &&
-              merged.valid.date && merged.valid.time &&
-              (merged.dateTime != *const_cast<const time_t *>(&gps.fix().dateTime)))
-            new_fix = true;
           safe_fix = *const_cast<const gps_fix *>(&gps.fix());
           new_safe_fix = true;
         }
       }
 
-      if (new_fix) {
-        traceIt();
-        merged = safe_fix;
-      } else if (new_safe_fix)
-        merged |= safe_fix;
+      if (new_safe_fix) {
+        if (safe_fix.valid.date && safe_fix.valid.time &&
+            merged.valid.date && merged.valid.time &&
+            (merged.dateTime != safe_fix.dateTime)) {
+          traceIt();
+          merged = safe_fix;
+        } else
+          merged |= safe_fix;
+      }
     };
     
     /**
@@ -56,7 +55,7 @@ public:
      */
     virtual int putchar( char c )
     {
-      if (gps.decode(c))
+      if (gps.decode(c) == NMEAGPS::DECODE_COMPLETED)
         Event::push( Event::RECEIVE_COMPLETED_TYPE, this );
       return c;
     };
@@ -68,9 +67,6 @@ static MyGPS gps;
 
 static IOBuffer<UART::BUFFER_MAX> obuf;
 UART uart1(1, &gps, &obuf);
-
-static clock_t now = 0;
-static clock_t lastTrace = 0;
 
 //--------------------------
 
@@ -128,18 +124,12 @@ static void traceIt()
 #endif
   trace << endl;
 
-  lastTrace = now;
-
 } // traceIt
 
 //--------------------------
 
 void setup()
 {
-  // Watchdog for sleeping
-  Watchdog::begin( 16, Watchdog::push_timeout_events );
-  RTC::begin();
-
   // Start the normal trace output
   uart.begin(9600);
   trace.begin(&uart, PSTR("CosaGPSEvent: started"));
@@ -159,8 +149,5 @@ void loop()
   while (Event::queue.dequeue( &event ))
     event.dispatch();
     
-  now = RTC::time();
-
-  if (lastTrace + 5 <= now)
-    traceIt();
+  Power::sleep();
 }

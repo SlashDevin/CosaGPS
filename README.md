@@ -67,7 +67,7 @@ while (uart1.available())
       sentenceReceived();
   }
 ```
-Although the `fix().status` can be checked, none of the valid flags will be `true`.
+Although the `fix().status` can be checked, no valid flags are available.
 
 The `ubloxGPS` derived class adds 18 bytes to handle the more-complicated protocol, 
 plus 5 static bytes for converting GPS time and Time Of Week to UTC, for a total of 
@@ -83,3 +83,5 @@ Several programs are provided to demonstrate how to use the classes in these dif
 * [CosaUBXGPS](CosaUBXGPS.ino) - sync, polled, fused, standard NMEA + ublox proprietary NMEA + ublox protocol
 
 Preprocessor symbol `USE_FLOAT` can be used to select integer or floating-point output.
+
+`CosaGPSTest.ino is a self-test program.  Various strings are passed to `decode` and the expected pass or fail results are displayed.

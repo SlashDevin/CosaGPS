@@ -12,9 +12,12 @@ clock_t ubloxGPS::start_of_week = 0;
 
 void ubloxGPS::rxBegin()
 {
-  rx().init();
+  m_rx_msg.init();
   storage = (msg_t *) NULL;
   chrCount = 0;
+#ifdef UBLOX_PARSE_NMEA
+  nmeaMessage = NMEA_UNKNOWN;
+#endif
 }
 
 bool ubloxGPS::rxEnd()
@@ -55,9 +58,9 @@ bool ubloxGPS::rxEnd()
   return visible_msg;
 }
 
-bool ubloxGPS::decode( char c )
+ubloxGPS::decode_t ubloxGPS::decode( char c )
 {
-    bool done = false;
+    decode_t res = DECODE_CHR_OK;
     uint8_t chr = c;
 
     switch ((ubxState_t) rxState) {
@@ -66,9 +69,12 @@ bool ubloxGPS::decode( char c )
         if (chr == SYNC_1)
           rxState = (rxState_t) UBX_SYNC2;
 #ifdef UBLOX_PARSE_NMEA
-        else
+        else {
           // Delegate
-          done = NMEAGPS::decode( c );
+          res = NMEAGPS::decode( c );
+          if (rxState != NMEA_IDLE)
+            m_rx_msg.init();
+        }
 #endif
         break;
 
@@ -83,8 +89,9 @@ bool ubloxGPS::decode( char c )
           break;
 
       case UBX_HEAD:
-          rx().crc_a += chr;
-          rx().crc_b += rx().crc_a;
+//trace << hex << chr;
+          m_rx_msg.crc_a += chr;
+          m_rx_msg.crc_b += m_rx_msg.crc_a;
 
           switch (chrCount++) {
             case 0:
@@ -112,8 +119,9 @@ bool ubloxGPS::decode( char c )
           break;
 
         case UBX_RECEIVING_DATA:
-          rx().crc_a += chr;
-          rx().crc_b += rx().crc_a;
+//trace << hex << chr;
+          m_rx_msg.crc_a += chr;
+          m_rx_msg.crc_b += m_rx_msg.crc_a;
 
           if (storage && (chrCount < storage->length))
             ((uint8_t *)storage)[ sizeof(msg_t)+chrCount ] = chr;
@@ -131,7 +139,7 @@ bool ubloxGPS::decode( char c )
           break;
 
       case UBX_CRC_A:
-          if (chr != rx().crc_a) {
+          if (chr != m_rx_msg.crc_a) {
             rx().msg_class = UBX_UNK;
 #ifdef NMEAGPS_STATS
             statistics.parser_crcerr++;
@@ -141,26 +149,25 @@ bool ubloxGPS::decode( char c )
           break;
 
       case UBX_CRC_B:
-          if (chr != rx().crc_b) {
+          if (chr != m_rx_msg.crc_b) {
             rx().msg_class = UBX_UNK;
 #ifdef NMEAGPS_STATS
             statistics.parser_crcerr++;
 #endif
-          } else {
-            done = rxEnd();
-          }
+          } else if (rxEnd())
+            res = ubloxGPS::DECODE_COMPLETED;
           rxState = (rxState_t) UBX_IDLE;
           break;
 
       default:
 #ifdef UBLOX_PARSE_NMEA
           // Delegate
-          done = NMEAGPS::decode( c );
+          res = NMEAGPS::decode( c );
 #endif
           break;
     }
 
-    return done;
+    return res;
 }
 
 
@@ -219,6 +226,7 @@ void ubloxGPS::write( const msg_t & msg )
 
   sent.msg_class = msg.msg_class;
   sent.msg_id    = msg.msg_id;
+//trace << PSTR("::write ") << msg.msg_class << PSTR("/") << msg.msg_id << endl;
 }
 
 void ubloxGPS::write_P( const msg_t & msg )

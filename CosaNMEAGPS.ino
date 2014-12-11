@@ -4,15 +4,12 @@
 */
 
 #include "./NMEAGPS.h"
+//#define USE_FLOAT
 
 #include "Cosa/Trace.hh"
 #include "Cosa/IOBuffer.hh"
 #include "Cosa/IOStream/Driver/UART.hh"
-#include "Cosa/Watchdog.hh"
-#if !defined(GPS_FIX_DATE) & !defined(GPS_FIX_TIME)
-#include "Cosa/RTC.hh"
-static clock_t now = 0L;
-#endif
+#include "Cosa/Power.hh"
 
 static IOBuffer<UART::BUFFER_MAX> obuf;
 static IOBuffer<UART::BUFFER_MAX> ibuf;
@@ -40,7 +37,8 @@ static void sentenceReceived()
     trace << gps.fix().dateTime_cs;
   }
 #else
-  trace << now++ << PSTR("/") << RTC::seconds();
+  static clock_t now = 0L;
+  trace << now++;
 #endif
   trace << PSTR(",");
 
@@ -129,26 +127,11 @@ static void sentenceReceived()
 
 void setup()
 {
-  // Watchdog for sleeping
-  Watchdog::begin( 64 );
-
-#if !defined(GPS_FIX_DATE) & !defined(GPS_FIX_TIME)
-  RTC::begin();
-#endif
-
   // Start the normal trace output
   uart.begin(9600);
   trace.begin(&uart, PSTR("CosaNMEAGPS: started"));
   trace << PSTR("fix object size = ") << sizeof(gps.fix()) << endl;
   trace << PSTR("gps object size = ") << sizeof(gps) << endl;
-  trace << PSTR("  offsets = {") << 
-    offsetof(NMEAGPS,crc) << PSTR(",") << 
-    offsetof(NMEAGPS,fieldIndex) << PSTR(",") << 
-    offsetof(NMEAGPS,chrCount) << PSTR(",") << 
-    offsetof(NMEAGPS,decimal) << PSTR(",") << 
-    offsetof(NMEAGPS,rxState) << PSTR(",") << 
-    offsetof(NMEAGPS,nmeaMessage) << PSTR(",") << 
-    offsetof(NMEAGPS,m_fix) << endl;
   
   // Start the UART for the GPS device
   uart1.begin(9600);
@@ -159,10 +142,10 @@ void setup()
 void loop()
 {
   while (uart1.available())
-    if (gps.decode( uart1.getchar() )) {
+    if (gps.decode( uart1.getchar() ) == NMEAGPS::DECODE_COMPLETED) {
       if (gps.nmeaMessage == NMEAGPS::NMEA_RMC)
         sentenceReceived();
     }
 
-  Watchdog::await();
+  Power::sleep();
 }

@@ -3,11 +3,10 @@
   uart1 should be connected to the GPS device.
 */
 
-#include "Cosa/RTC.hh"
 #include "Cosa/Trace.hh"
 #include "Cosa/IOBuffer.hh"
 #include "Cosa/IOStream/Driver/UART.hh"
-#include "Cosa/Watchdog.hh"
+#include "Cosa/Power.hh"
 
 #include "NMEAGPS.h"
 
@@ -116,18 +115,12 @@ static void traceIt()
 #endif
   trace << endl;
 
-  lastTrace = now;
-
 } // traceIt
 
 //--------------------------
 
 void setup()
 {
-  // Watchdog for sleeping
-  Watchdog::begin( 16, Watchdog::push_timeout_events );
-  RTC::begin();
-
   // Start the normal trace output
   uart.begin(9600);
   trace.begin(&uart, PSTR("CosaGPSDevice: started"));
@@ -143,10 +136,8 @@ void setup()
 
 void loop()
 {
-  bool new_fix = false;
   bool new_safe_fix = false;
-  gps_fix safe_fix;
-
+  static gps_fix safe_fix;
 
   synchronized {
     if (gps.frame_received) {
@@ -155,24 +146,21 @@ void loop()
       // This can be susceptible to processing delays; missing an /is_coherent/
       // means that some data may not get copied into safe_fix.
       if (gps.is_coherent()) {
-        if (gps.fix().valid.date && gps.fix().valid.time &&
-            gps.merged.valid.date && gps.merged.valid.time &&
-            (gps.merged.dateTime != *const_cast<const time_t *>(&gps.fix().dateTime)))
-          new_fix = true;
         safe_fix = *const_cast<const gps_fix *>(&gps.fix());
         new_safe_fix = true;
       }
     }
   }
 
-  if (new_fix) {
-    traceIt();
-    gps.merged = safe_fix;
-  } else if (new_safe_fix)
-    gps.merged |= safe_fix;
+  if (new_safe_fix) {
+    if (safe_fix.valid.date && safe_fix.valid.time &&
+        gps.merged.valid.date && gps.merged.valid.time &&
+        (gps.merged.dateTime != safe_fix.dateTime)) {
+      traceIt();
+      gps.merged = safe_fix;
+    } else
+      gps.merged |= safe_fix;
+  }
 
-  now = RTC::time();
-
-  if (lastTrace + 5 <= now)
-    traceIt();
+  Power::sleep();
 }

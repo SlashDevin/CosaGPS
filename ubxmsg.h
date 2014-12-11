@@ -30,6 +30,7 @@ namespace ublox {
         UBX_NAV_POSLLH  = 0x02, // Current Position
         UBX_NAV_VELNED  = 0x12, // Current Velocity
         UBX_NAV_TIMEGPS = 0x20, // Current GPS Time
+        UBX_NAV_TIMEUTC = 0x21, // Current UTC Time
         UBX_ID_UNK   = 0xFF
       }  __attribute__((packed));
 
@@ -42,7 +43,7 @@ namespace ublox {
 
       struct msg_t : msg_hdr_t {
           uint16_t length;  // should be sizeof(this)-sizeof(msg+hdr_t)
-#define UBX_CTOR_LEN (sizeof(*this)-sizeof(msg_t))
+#define UBX_MSG_LEN(msg) (sizeof(msg) - sizeof(ublox::msg_t))
 
           msg_t()
           {
@@ -76,7 +77,7 @@ namespace ublox {
         uint8_t      rate;
 
         cfg_msg_t( msg_class_t m, msg_id_t i, uint8_t r )
-          : msg_t( UBX_CFG, UBX_CFG_MSG, UBX_CTOR_LEN )
+          : msg_t( UBX_CFG, UBX_CFG_MSG, UBX_MSG_LEN(*this) )
         {
           cfg_msg_class = m;
           cfg_msg       = i;
@@ -99,7 +100,7 @@ namespace ublox {
         enum time_ref_t time_ref:16;
 
         cfg_rate_t( uint16_t gr, uint16_t nr, enum time_ref_t tr )
-          : msg_t( UBX_CFG, UBX_CFG_RATE, UBX_CTOR_LEN )
+          : msg_t( UBX_CFG, UBX_CFG_RATE, UBX_MSG_LEN(*this) )
         {
           GPS_meas_rate = gr;
           nav_rate      = nr;
@@ -159,7 +160,7 @@ namespace ublox {
         uint32_t always_zero_2;
         uint32_t always_zero_3;
 
-        cfg_nav5_t() : msg_t( UBX_CFG, UBX_CFG_NAV5, UBX_CTOR_LEN )
+        cfg_nav5_t() : msg_t( UBX_CFG, UBX_CFG_NAV5, UBX_MSG_LEN(*this) )
           {
             apply_word = 0xFF00;
             always_zero_1 =
@@ -179,7 +180,7 @@ namespace ublox {
         uint32_t horiz_acc; // mm
         uint32_t vert_acc; // mm
 
-        nav_posllh_t() : msg_t( UBX_NAV, UBX_NAV_POSLLH, UBX_CTOR_LEN ) {};
+        nav_posllh_t() : msg_t( UBX_NAV, UBX_NAV_POSLLH, UBX_MSG_LEN(*this) ) {};
     }  __attribute__((packed));
 
     // Velocity Solution in North/East/Down
@@ -194,7 +195,7 @@ namespace ublox {
         uint32_t speed_acc;    // cm/s
         uint32_t heading_acc;  // degrees * 1e5
         
-        nav_velned_t() : msg_t( UBX_NAV, UBX_NAV_VELNED, UBX_CTOR_LEN ) {};
+        nav_velned_t() : msg_t( UBX_NAV, UBX_NAV_VELNED, UBX_MSG_LEN(*this) ) {};
     }  __attribute__((packed));
 
     // GPS Time Solution
@@ -210,9 +211,29 @@ namespace ublox {
         } __attribute__((packed))
           valid;
 
-        nav_timegps_t() : msg_t( UBX_NAV, UBX_NAV_TIMEGPS, UBX_CTOR_LEN ) {};
+        nav_timegps_t() : msg_t( UBX_NAV, UBX_NAV_TIMEGPS, UBX_MSG_LEN(*this) ) {};
     }  __attribute__((packed));
 
+    // UTC Time Solution
+    struct nav_timeutc_t : msg_t {
+        uint32_t time_of_week;   // mS
+        uint32_t time_accuracy;  // nS
+        int32_t  fractional_ToW; // nS
+        uint16_t year;           // 1999..2099
+        uint8_t  month;          // 1..12
+        uint8_t  day;            // 1..31
+        uint8_t  hour;           // 0..23
+        uint8_t  minute;         // 0..59
+        uint8_t  second;         // 0..59
+        struct {
+          bool time_of_week:1;
+          bool week_number:1;
+          bool UTC:1;
+        } __attribute__((packed))
+          valid;
+
+        nav_timeutc_t() : msg_t( UBX_NAV, UBX_NAV_TIMEUTC, UBX_MSG_LEN(*this) ) {};
+    }  __attribute__((packed));
 };
 
 #endif

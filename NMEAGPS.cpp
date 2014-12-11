@@ -88,9 +88,9 @@ void NMEAGPS::rxEnd( bool ok )
 }
 
 
-bool NMEAGPS::decode( char c )
+NMEAGPS::decode_t NMEAGPS::decode( char c )
 {
-  bool was_coherent = is_coherent();
+  decode_t res = DECODE_CHR_OK;
 
   if (c == '$') {  // Always restarts
     rxBegin();
@@ -98,6 +98,7 @@ bool NMEAGPS::decode( char c )
   } else {
     switch (rxState) {
       case NMEA_IDLE:
+          res = DECODE_CHR_INVALID;
           break;
 
           // Wait until complete line is received
@@ -107,19 +108,21 @@ bool NMEAGPS::decode( char c )
 
           } else if ((c == CR) || (c == LF)) { // Line finished, no CRC
               rxEnd( true );
+              res = DECODE_COMPLETED;
 
           } else if ((c < ' ') || ('~' < c)) { // Invalid char
+              res = DECODE_CHR_INVALID;
               rxEnd( false );
 
           } else {            // normal data character
               crc ^= c;
 
               if (fieldIndex == 0) {
-                cmd_char_t res = parseCommand( c );
-                if (res == CMD_MATCH) {
+                decode_t cmd_res = parseCommand( c );
+                if (cmd_res == DECODE_COMPLETED) {
                   m_fix.valid.as_byte = 0;
                   coherent = false;
-                } else if (res == CMD_CHR_INVALID)
+                } else if (cmd_res == DECODE_CHR_INVALID)
                   rxEnd( false );
 
               } else if (!parseField(c))
@@ -155,13 +158,15 @@ bool NMEAGPS::decode( char c )
               statistics.parser_crcerr++;
 #endif
               rxEnd( false );
-          } else  // valid second CRC nibble
+          } else { // valid second CRC nibble
               rxEnd( true );
+              res = DECODE_COMPLETED;
+          }
           break;
     }
   }
 
-  return !was_coherent && is_coherent();
+  return res;
 }
 
 static const char gpgga[] __PROGMEM =  "GPGGA";
@@ -192,7 +197,7 @@ const NMEAGPS::msg_table_t NMEAGPS::nmea_msg_table __PROGMEM =
     NMEAGPS::std_nmea
   };
 
-NMEAGPS::cmd_char_t NMEAGPS::parseCommand( char c )
+NMEAGPS::decode_t NMEAGPS::parseCommand( char c )
 {
 //trace << c;
   const msg_table_t *msgs = msg_table();
@@ -200,7 +205,7 @@ NMEAGPS::cmd_char_t NMEAGPS::parseCommand( char c )
   for (;;) {
     uint8_t    table_size       = pgm_read_byte( &msgs->size );
     uint8_t    msg_offset       = pgm_read_byte( &msgs->offset );
-    cmd_char_t res              = CMD_CHR_INVALID;
+    decode_t res              = DECODE_CHR_INVALID;
     bool       check_this_table = true;
     uint8_t    entry;
 
@@ -221,12 +226,12 @@ NMEAGPS::cmd_char_t NMEAGPS::parseCommand( char c )
         char rc = pgm_read_byte( &table_i[chrCount] );
         if (c == rc) {
           entry = i;
-          res = CMD_CHR_OK;
+          res = DECODE_CHR_OK;
           break;
         }
         if ((c == ',') && (rc == 0)) {
 //trace << PSTR(" -> ") << (uint8_t)entry << endl;
-          res = CMD_MATCH;
+          res = DECODE_COMPLETED;
           break;
         }
         uint8_t next_msg = i+1;
@@ -245,7 +250,7 @@ NMEAGPS::cmd_char_t NMEAGPS::parseCommand( char c )
       }
     }
 
-    if (res == CMD_CHR_INVALID) {
+    if (res == DECODE_CHR_INVALID) {
       msgs = (const msg_table_t *) pgm_read_word( &msgs->previous );
       if (msgs)
 //{ trace << '^'; // << hex << msgs << '=' << hex << &nmea_msg_table << ' ';

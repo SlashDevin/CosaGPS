@@ -84,9 +84,9 @@ void setup()
 
 
   //  Some basic rejection tests
-  for (uint16_t c=0; c < 256*80; c++) {
+  for (uint16_t c=0; c < 256; c++) {
     if (c != '$') {
-      if (gps.decode( (char)c )) {
+      if (NMEAGPS::DECODE_COMPLETED == gps.decode( (char)c )) {
         trace << PSTR("FAILED to reject single character ") << hex << c << endl;
         failed++;
         return;
@@ -96,7 +96,7 @@ void setup()
   passed++;
 
   for (uint16_t i=0; i < 256; i++) {
-    if (gps.decode( '$' )) {
+    if (NMEAGPS::DECODE_COMPLETED == gps.decode( '$' )) {
       trace << PSTR("FAILED to reject multiple '$' characters\n");
       failed++;
       return;
@@ -113,7 +113,7 @@ void setup()
     uint8_t j = 0;
     for (;;) {
       if (j++ == insert_at) {
-        if (gps.decode( ' ' )) {
+        if (NMEAGPS::DECODE_COMPLETED == gps.decode( ' ' )) {
           trace << PSTR("FAILED inserting ' ' @ pos ") << insert_at << endl;
           failed++;
           return;
@@ -127,7 +127,7 @@ void setup()
         }
         break;
       }
-      if (gps.decode( c )) {
+      if (NMEAGPS::DECODE_COMPLETED == gps.decode( c )) {
         trace << PSTR("FAILED inserting @ pos ") << insert_at << endl;
         failed++;
         return;
@@ -144,7 +144,7 @@ void setup()
       char c = pgm_read_byte( ptr++ );
       if (!c || (c == '*')) break;
       if (j == i) dropped = c;
-      if ((j++ != i) && gps.decode( c )) {
+      if ((j++ != i) && (gps.decode( c ) == NMEAGPS::DECODE_COMPLETED)) {
         trace << PSTR("FAILED dropping '") << dropped << PSTR("' at pos ") << i << endl;
         failed++;
         break;
@@ -163,7 +163,7 @@ void setup()
       if (!c || (c == '*')) break;
       if (j++ == i)
         replaced = c;
-      if (gps.decode( c )) {
+      if (NMEAGPS::DECODE_COMPLETED == gps.decode( c )) {
         trace << PSTR("FAILED replacing '") << replaced++ << PSTR("' with '");
         trace << replaced << PSTR("' at pos ") << i << endl;
         failed++;
@@ -183,7 +183,7 @@ void setup()
         failed++;
         break;
       }
-      if (gps.decode( c )) {
+      if (NMEAGPS::DECODE_COMPLETED == gps.decode( c )) {
         gps_fix expected;
         expected.dateTime.parse( PSTR("2002-12-09 09:27:25") );
         expected.dateTime_cs = 0;
