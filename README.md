@@ -84,4 +84,4 @@ Several programs are provided to demonstrate how to use the classes in these dif
 
 Preprocessor symbol `USE_FLOAT` can be used to select integer or floating-point output.
 
-`CosaGPSTest.ino is a self-test program.  Various strings are passed to `decode` and the expected pass or fail results are displayed.
+`CosaGPSTest.ino` is a self-test program.  Various strings are passed to `decode` and the expected pass or fail results are displayed.
