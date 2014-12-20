@@ -4,14 +4,14 @@
 // Include core libraries
 #include "Cosa/Time.hh"
 
+#define GPS_FIX_DATE
+#define GPS_FIX_TIME
 #define GPS_FIX_LOCATION
 #define GPS_FIX_ALTITUDE
 #define GPS_FIX_SPEED
 #define GPS_FIX_HEADING
 #define GPS_FIX_SATELLITES
-#define GPS_FIX_HDOP
-#define GPS_FIX_DATE
-#define GPS_FIX_TIME
+//#define GPS_FIX_HDOP
 
 class gps_fix {
 public:
@@ -43,8 +43,8 @@ public:
    */
 
 #ifdef GPS_FIX_LOCATION
-    int32_t       lat;  // degree * 1e7, negative is South
-    int32_t       lon;  // degree * 1e7, negative is West
+    int32_t       lat;  // degrees * 1e7, negative is South
+    int32_t       lon;  // degrees * 1e7, negative is West
 
     int32_t latitudeL() const { return lat; };
     float latitudeF() const { return ((float) lat) * 1.0e-7; };
@@ -56,7 +56,7 @@ public:
 #endif
 
 #ifdef GPS_FIX_ALTITUDE
-    whole_frac    alt; // .01
+    whole_frac    alt; // .01 meters
 
     int32_t altitude_cm() const { return alt.int32_00(); };
     float altitudeF() const { return alt.float_00(); };
@@ -64,20 +64,27 @@ public:
 #endif
 
 #ifdef GPS_FIX_SPEED
-    whole_frac    spd; // .001
+    whole_frac    spd; // .001 nautical miles per hour
 
     uint32_t speed_mkn() const { return spd.int32_000(); };
     float speed() const { return spd.float_000(); };
 #endif
 
 #ifdef GPS_FIX_HEADING
-    whole_frac    hdg; //  .01
+    whole_frac    hdg; //  .01 degrees
 
     uint16_t heading_cd() const { return hdg.int16_00(); };
     float heading() const { return hdg.float_00(); };
 #endif
 
 #ifdef GPS_FIX_HDOP
+  /**
+   * Horizontal Dilution of Precision.  This is a measure of the current satellite
+   * constellation geometry WRT how 'good' it is for determining a position.  This
+   * is _independent_ of signal strength and many other factors that may be
+   * internal to the receiver.  It cannot be used to determine position accuracy
+   * in meters.
+   */
   uint16_t           hdop; // x 1000
 #endif
 

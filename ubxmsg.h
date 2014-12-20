@@ -28,6 +28,7 @@ namespace ublox {
         UBX_CFG_NAV5    = 0x24, // Configure navigation engine settings
         UBX_MON_VER     = 0x04, // Monitor Receiver/Software version
         UBX_NAV_POSLLH  = 0x02, // Current Position
+        UBX_NAV_STATUS  = 0x03, // Receiver Navigation Status
         UBX_NAV_VELNED  = 0x12, // Current Velocity
         UBX_NAV_TIMEGPS = 0x20, // Current GPS Time
         UBX_NAV_TIMEUTC = 0x21, // Current UTC Time
@@ -181,6 +182,64 @@ namespace ublox {
         uint32_t vert_acc; // mm
 
         nav_posllh_t() : msg_t( UBX_NAV, UBX_NAV_POSLLH, UBX_MSG_LEN(*this) ) {};
+    } __attribute__((packed));
+
+    // Receiver Navigation Status
+    struct nav_status_t : msg_t {
+        uint32_t time_of_week; // mS
+        enum status_t {
+          NAV_STAT_NONE,
+          NAV_STAT_DR_ONLY,
+          NAV_STAT_2D,
+          NAV_STAT_3D,
+          NAV_STAT_GPS_DR,
+          NAV_STAT_TIME_ONLY
+        } __attribute__((packed))
+            status;
+
+        struct flags_t {
+          bool gps_fix:1;
+          bool diff_soln:1;
+          bool week:1;
+          bool time_of_week:1;
+        } __attribute__((packed))
+          flags;
+        
+        static gps_fix::status_t to_status( enum status_t status, flags_t flags )
+        {
+          if (!flags.gps_fix)
+            return gps_fix::STATUS_NONE;
+          if (flags.diff_soln)
+            return gps_fix::STATUS_DGPS;
+          switch (status) {
+            case NAV_STAT_NONE     : return gps_fix::STATUS_NONE;
+            case NAV_STAT_DR_ONLY  : return gps_fix::STATUS_EST;
+            case NAV_STAT_2D       :
+            case NAV_STAT_3D       :
+            case NAV_STAT_GPS_DR   : return gps_fix::STATUS_STD;
+            case NAV_STAT_TIME_ONLY: return gps_fix::STATUS_TIME_ONLY;
+          }
+        }
+        
+        struct {
+          bool dgps_input:1;
+          bool _skip_:6;
+          bool map_matching:1;
+        }  __attribute__((packed))
+          fix_status;
+
+        enum {
+          PSM_ACQUISITION,
+          PSM_TRACKING,
+          PSM_POWER_OPTIMIZED_TRACKING,
+          PSM_INACTIVE
+        }
+          power_safe:2; // FW > v7.01
+
+        uint32_t time_to_first_fix; // ms time tag
+        uint32_t uptime; // ms since startup/reset
+
+        nav_status_t() : msg_t( UBX_NAV, UBX_NAV_STATUS, UBX_MSG_LEN(*this) ) {};
     }  __attribute__((packed));
 
     // Velocity Solution in North/East/Down
@@ -204,7 +263,7 @@ namespace ublox {
         int32_t  fractional_ToW; // nS
         int16_t  week;
         int8_t   leap_seconds;   // GPS-UTC
-        struct {
+        struct valid_t {
           bool time_of_week:1;
           bool week:1;
           bool leap_seconds:1;
@@ -225,7 +284,7 @@ namespace ublox {
         uint8_t  hour;           // 0..23
         uint8_t  minute;         // 0..59
         uint8_t  second;         // 0..59
-        struct {
+        struct valid_t {
           bool time_of_week:1;
           bool week_number:1;
           bool UTC:1;

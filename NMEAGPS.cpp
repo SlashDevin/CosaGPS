@@ -40,6 +40,12 @@ inline static uint8_t parseHEX(char a) {
         return a - '0';
 }
 
+static char toHexDigit( uint8_t val )
+{
+  val &= 0x0F;
+  return (val >= 10) ? ((val - 10) + 'A') : (val + '0');
+}
+
 
 void NMEAGPS::rxBegin()
 {
@@ -78,8 +84,10 @@ void NMEAGPS::rxEnd( bool ok )
 #endif
     }
 
-  } else
+  } else {
     m_fix.valid.as_byte = 0;
+    nmeaMessage = NMEA_UNKNOWN;
+  }
 
 #ifdef NMEAGPS_STATS
   if (ok)
@@ -99,6 +107,8 @@ NMEAGPS::decode_t NMEAGPS::decode( char c )
     switch (rxState) {
       case NMEA_IDLE:
           res = DECODE_CHR_INVALID;
+          nmeaMessage = NMEA_UNKNOWN;
+//trace << 'X' << toHexDigit(c >> 4) << toHexDigit(c);
           break;
 
           // Wait until complete line is received
@@ -122,8 +132,9 @@ NMEAGPS::decode_t NMEAGPS::decode( char c )
                 if (cmd_res == DECODE_COMPLETED) {
                   m_fix.valid.as_byte = 0;
                   coherent = false;
-                } else if (cmd_res == DECODE_CHR_INVALID)
+                } else if (cmd_res == DECODE_CHR_INVALID) {
                   rxEnd( false );
+                }
 
               } else if (!parseField(c))
 //{ trace << PSTR("!pf @ ") << nmeaMessage << PSTR(":") << fieldIndex << PSTR("/") << chrCount << PSTR("'") << c << PSTR("'\n");
@@ -203,11 +214,11 @@ NMEAGPS::decode_t NMEAGPS::parseCommand( char c )
   const msg_table_t *msgs = msg_table();
 
   for (;;) {
-    uint8_t    table_size       = pgm_read_byte( &msgs->size );
-    uint8_t    msg_offset       = pgm_read_byte( &msgs->offset );
+    uint8_t  table_size       = pgm_read_byte( &msgs->size );
+    uint8_t  msg_offset       = pgm_read_byte( &msgs->offset );
     decode_t res              = DECODE_CHR_INVALID;
-    bool       check_this_table = true;
-    uint8_t    entry;
+    bool     check_this_table = true;
+    uint8_t  entry;
 
     if (nmeaMessage == NMEA_UNKNOWN)
       entry = 0;
@@ -525,12 +536,6 @@ void NMEAGPS::poll( IOStream::Device *device, nmea_msg_t msg )
     send( device, (str_P) pgm_read_word(&poll_msgs[msg-NMEA_FIRST_MSG]) );
 }
 
-
-static char toHexDigit( uint8_t val )
-{
-  val &= 0x0F;
-  return (val >= 10) ? ((val - 10) + 'A') : (val + '0');
-}
 
 
 

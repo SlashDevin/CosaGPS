@@ -41,11 +41,11 @@
  * required if you will be doing time_t-to-clock_t operations.
  */
 
-#define NMEAGPS_PARSE_GGA
+//#define NMEAGPS_PARSE_GGA
 //#define NMEAGPS_PARSE_GLL
 //#define NMEAGPS_PARSE_GSA
 //#define NMEAGPS_PARSE_GSV
-#define NMEAGPS_PARSE_RMC
+//#define NMEAGPS_PARSE_RMC
 //#define NMEAGPS_PARSE_VTG
 //#define NMEAGPS_PARSE_ZDA
 
@@ -100,7 +100,7 @@ protected:
         NMEA_RECEIVING_DATA,
         NMEA_RECEIVING_CRC1,
         NMEA_RECEIVING_CRC2
-    } __attribute__((packed));
+    };
     static const uint8_t NMEA_FIRST_STATE = NMEA_IDLE;
     static const uint8_t NMEA_LAST_STATE  = NMEA_RECEIVING_CRC2;
 
@@ -125,7 +125,7 @@ public:
      * sentence is received, members of the /fix/ structure are updated.  
      * @return true when new /fix/ data is available and coherent.
      */
-    decode_t decode( char c );
+    NMEAGPS_VIRTUAL decode_t decode( char c );
 
     /**
      * Most recent NMEA sentence type received.
