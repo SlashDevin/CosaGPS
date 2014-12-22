@@ -405,7 +405,8 @@ bool ubloxGPS::parseField(char chr)
               case 16: case 17: case 18: case 19:
                 ((uint8_t *)&m_fix.alt) [ chrCount-16 ] = chr;
                 if (chrCount == 19) {
-                  int32_t height_MSLmm = *((int32_t *)&m_fix.alt);
+                  gps_fix::whole_frac *altp = &m_fix.alt;
+                  int32_t height_MSLmm = *((int32_t *)altp);
 //trace << PSTR(" alt = ") << height_MSLmm;
                   m_fix.alt.whole = height_MSLmm / 1000UL;
                   m_fix.alt.frac  = ((uint16_t)(height_MSLmm - (m_fix.alt.whole * 1000UL)))/10;
@@ -435,8 +436,9 @@ bool ubloxGPS::parseField(char chr)
               case 20: case 21: case 22: case 23:
                 ((uint8_t *)&m_fix.spd) [ chrCount-20 ] = chr;
                 if (chrCount == 23) {
-                  uint32_t ui = (*((uint32_t *)&m_fix.spd) * 36UL);
-                  m_fix.spd.whole = ui/1000UL; // kph = cm/s * 3600/100000
+                  gps_fix::whole_frac *spdp = &m_fix.spd;
+                  uint32_t ui = (*((uint32_t *)spdp) * 9UL);
+                  m_fix.spd.whole = ui/250UL; // kph = cm/s * 3600/100000
                   m_fix.spd.frac = ui - (m_fix.spd.whole * 1000UL);
                   m_fix.valid.speed = true;
 //trace << PSTR("spd = ") << m_fix.speed_mkn();
@@ -448,7 +450,8 @@ bool ubloxGPS::parseField(char chr)
               case 24: case 25: case 26: case 27:
                 ((uint8_t *)&m_fix.hdg) [ chrCount-24 ] = chr;
                 if (chrCount == 27) {
-                  uint32_t ui = (*((uint32_t *)&m_fix.hdg) * 36UL);
+                  gps_fix::whole_frac *hdgp = &m_fix.hdg;
+                  uint32_t ui = (*((uint32_t *)hdgp) * 36UL);
                   m_fix.hdg.whole = ui / 100000UL;
                   m_fix.hdg.frac  = (ui - (m_fix.hdg.whole * 100000UL))/1000UL;
                   m_fix.valid.heading = true;
@@ -500,33 +503,43 @@ bool ubloxGPS::parseField(char chr)
           case UBX_NAV_TIMEUTC:
 //if (chrCount == 0) trace << PSTR( " timeUTC ");
 #ifdef UBLOX_PARSE_TIMEUTC
+#if defined(GPS_FIX_TIME) | defined(GPS_FIX_DATE)
             if (m_fix.status > gps_fix::STATUS_NONE) {
               switch (chrCount) {
 
-#if defined(GPS_FIX_TIME) & defined(GPS_FIX_DATE)
+#if defined(GPS_FIX_DATE)
                 case 12: m_fix.dateTime.year = chr; break;
                 case 13: m_fix.dateTime.year = ((((uint16_t)chr) << 8) + m_fix.dateTime.year) % 100; break;
                 case 14: m_fix.dateTime.month = chr;                break;
                 case 15: m_fix.dateTime.date = chr;                 break;
+#endif
+#if defined(GPS_FIX_TIME)
                 case 16: m_fix.dateTime.hours = chr;                break;
                 case 17: m_fix.dateTime.minutes = chr;              break;
                 case 18: m_fix.dateTime.seconds = chr;              break;
+#endif
                 case 19:
                   {
                     ublox::nav_timeutc_t::valid_t &v = *((ublox::nav_timeutc_t::valid_t *) &chr);
-                    m_fix.valid.date =
+#if defined(GPS_FIX_DATE)
+                    m_fix.valid.date = (v.UTC & v.time_of_week);
+#endif
+#if defined(GPS_FIX_TIME)
                     m_fix.valid.time = (v.UTC & v.time_of_week);
+#endif
+#if defined(GPS_FIX_TIME) & defined(GPS_FIX_DATE)
                     if (m_fix.valid.date &&
                         (GPSTime::start_of_week() == 0) &&
                         (GPSTime::leap_seconds != 0))
                       GPSTime::start_of_week( m_fix.dateTime );
+#endif
 //trace << m_fix.dateTime << PSTR(".") << m_fix.dateTime_cs;
 //trace << ' ' << v.UTC << ' ' << v.time_of_week << ' ' << start_of_week();
                   }
                   break;
-#endif
               }
             }
+#endif
 #endif
             break;
 

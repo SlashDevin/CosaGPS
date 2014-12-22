@@ -3,16 +3,13 @@
   uart1 should be connected to the GPS device.
 */
 
-#include "Cosa/Trace.hh"
+#include "ubxGPS.h"
+
 #include "Cosa/IOBuffer.hh"
 #include "Cosa/IOStream/Driver/UART.hh"
 #include "Cosa/Power.hh"
-
-#include "./ubxGPS.h"
-
-#ifdef UBLOX_PARSE_UBLOX
 #include "Cosa/RTC.hh"
-#endif
+#include "Cosa/Trace.hh"
 
 static IOBuffer<UART::BUFFER_MAX> obuf;
 static IOBuffer<UART::BUFFER_MAX> ibuf;
@@ -23,13 +20,10 @@ class MyGPS : public ubloxGPS
 public:
 
     gps_fix merged;
+    enum { GETTING_STATUS, GETTING_LEAP_SECONDS, GETTING_UTC, RUNNING } state;
 
-
-#ifdef  UBLOX_PARSE_UBLOX
-    MyGPS( IOStream::Device *device ) : ubloxGPS( device ) { };
-#else
-    MyGPS() : ubloxGPS() { };
-#endif
+    MyGPS( IOStream::Device *device ) : ubloxGPS( device )
+      { state = GETTING_STATUS; };
 
     //--------------------------
 
@@ -39,8 +33,9 @@ public:
 
       if (since++ >= 2048) {
         since = 0;
-trace << PSTR("Hey!\n");
-        ask_for_fix();
+        trace << PSTR("RESTART!\n");
+        state = GETTING_STATUS;
+        enable_msg( ublox::UBX_NAV, ublox::UBX_NAV_STATUS );
       }
 
       while (uart1.available()) {
@@ -59,101 +54,108 @@ trace << PSTR("Hey!\n");
       {
         bool ok = false;
 
-#ifdef UBLOX_PARSE_NMEA
-        if (!ok && (nmeaMessage >= ubloxGPS::PUBX_00)) {
+        if (!ok && (nmeaMessage >= (nmea_msg_t)ubloxGPS::PUBX_00)) {
 //trace << PSTR("n ") << nmeaMessage << endl;
           ok = true;
         }
-#endif
-
-#ifdef UBLOX_PARSE_UBLOX
         if (!ok && (rx().msg_class != ublox::UBX_UNK)) {
 //trace << PSTR("u ") << rx().msg_class << PSTR("/") << rx().msg_id << endl;
           ok = true;
         }
-#endif
 
         if (ok) {
 
-          // See if we stepped into a different time interval,
-          //   or if it has finally become valid after a cold start.
+          switch (state) {
+            case GETTING_STATUS:
+              if (fix().status != gps_fix::STATUS_NONE) {
+                trace << PSTR("Acquired status: ") << fix().status << endl;
+#if defined(GPS_FIX_TIME) & defined(GPS_FIX_DATE)
+                state = GETTING_LEAP_SECONDS;
+                enable_msg( ublox::UBX_NAV, ublox::UBX_NAV_TIMEGPS );
+              }
+              break;
 
-          bool newInterval = true;
+            case GETTING_LEAP_SECONDS:
+              if (GPSTime::leap_seconds != 0) {
+                trace << PSTR("Acquired leap seconds: ") << GPSTime::leap_seconds << endl;
+                disable_msg( ublox::UBX_NAV, ublox::UBX_NAV_TIMEGPS );
+                enable_msg( ublox::UBX_NAV, ublox::UBX_NAV_TIMEUTC );
+                state = GETTING_UTC;
+              }
+              break;
+
+            case GETTING_UTC:
+              if (GPSTime::start_of_week() != 0) {
+                trace << PSTR("Acquired UTC: ") << fix().dateTime << endl;
+                trace << PSTR("Acquired Start-of-Week: ") << GPSTime::start_of_week() << endl;
+
+                state = RUNNING;
+
+#if defined(GPS_FIX_LOCATION) | defined(GPS_FIX_ALTITUDE) | \
+    defined(GPS_FIX_SPEED) | defined(GPS_FIX_HEADING)
+                disable_msg( ublox::UBX_NAV, ublox::UBX_NAV_TIMEUTC );
+#endif
+
+#else
+                state = RUNNING;
+
+#if defined(GPS_FIX_TIME) | defined(GPS_FIX_DATE)
+                enable_msg( ublox::UBX_NAV, ublox::UBX_NAV_TIMEUTC );
+#endif
+
+#endif
+
+#if defined(GPS_FIX_LOCATION) | defined(GPS_FIX_ALTITUDE)
+                enable_msg( ublox::UBX_NAV, ublox::UBX_NAV_POSLLH );
+#endif
+
+#if defined(GPS_FIX_SPEED) | defined(GPS_FIX_HEADING)
+                enable_msg( ublox::UBX_NAV, ublox::UBX_NAV_VELNED );
+#endif
+              }
+              break;
+
+            default:
+              // See if we stepped into a different time interval,
+              //   or if it has finally become valid after a cold start.
+
+              bool newInterval = true;
 #if defined(GPS_FIX_TIME)
-          newInterval = fix().valid.time &&
-                        (!merged.valid.time ||
-                         (merged.dateTime.seconds != fix().dateTime.seconds) ||
-                         (merged.dateTime.minutes != fix().dateTime.minutes) ||
-                         (merged.dateTime.hours   != fix().dateTime.hours));
+              newInterval = (fix().valid.time &&
+                            (!merged.valid.time ||
+                             (merged.dateTime.seconds != fix().dateTime.seconds) ||
+                             (merged.dateTime.minutes != fix().dateTime.minutes) ||
+                             (merged.dateTime.hours   != fix().dateTime.hours)));
 #elif defined(GPS_FIX_DATE)
-          newInterval = fix().valid.date &&
-                        (!merged.valid.date ||
-                         (merged.dateTime.date  != fix().dateTime.date) ||
-                         (merged.dateTime.month != fix().dateTime.month) ||
-                         (merged.dateTime.year  != fix().dateTime.year));
+              newInterval = (fix().valid.date &&
+                            (!merged.valid.date ||
+                             (merged.dateTime.date  != fix().dateTime.date) ||
+                             (merged.dateTime.month != fix().dateTime.month) ||
+                             (merged.dateTime.year  != fix().dateTime.year)));
 #endif
 //trace << PSTR("ps mvd ") << merged.valid.date << PSTR("/") << fix().valid.date;
 //trace << PSTR(", mvt ") << merged.valid.time << PSTR("/") << fix().valid.time;
 //trace << merged.dateTime << PSTR("/") << fix().dateTime;
 //trace << PSTR(", ni = ") << newInterval << endl;
-          if (newInterval) {
+              if (newInterval) {
 
-            // Log the previous interval
-            traceIt();
+                // Log the previous interval
+                traceIt();
 
-            ask_for_fix();
-            
-            //  Since we're into the next time interval, we throw away
-            //     all of the previous fix and start with what we
-            //     just received.
-            merged = fix();
+                //  Since we're into the next time interval, we throw away
+                //     all of the previous fix and start with what we
+                //     just received.
+                merged = fix();
 
-          } else {
-            // Accumulate all the reports in this time interval
-            merged |= fix();
+              } else {
+                // Accumulate all the reports in this time interval
+                merged |= fix();
+              }
+              break;
           }
         }
 
         return ok;
-      }
-
-    void ask_for_fix()
-      {
-#ifdef UBLOX_PARSE_NMEA
-        NMEAGPS::send( &uart1, PSTR("PUBX,00") );
-        NMEAGPS::send( &uart1, PSTR("PUBX,04") );
-#endif
-
-#ifdef UBLOX_PARSE_UBLOX
-        ublox::nav_status_t navstat;
-        poll_request( navstat );
-
-#if defined(GPS_FIX_TIME) & defined(GPS_FIX_DATE)
-        if (fix().status != gps_fix::STATUS_NONE) {
-
-          if (leap_seconds == 0) {
-            ublox::nav_timegps_t timegps;
-            poll_request( timegps );
-
-          } else if (start_of_week() == 0) {
-            ublox::nav_timeutc_t timeutc;
-            poll_request( timeutc );
-
-          } else {
-#if defined(GPS_FIX_LOCATION) | defined(GPS_FIX_ALTITUDE)
-            ublox::nav_posllh_t posllh;
-            poll_request( posllh );
-#endif
-
-#if defined(GPS_FIX_SPEED) | defined(GPS_FIX_HEADING)
-            ublox::nav_velned_t velned;
-            poll_request( velned );
-#endif
-          }
-        }
-#endif
-
-#endif
       }
 
     //--------------------------
@@ -180,10 +182,7 @@ trace << PSTR("Hey!\n");
 #else
       static uint16_t gps_seconds = 2;
       trace << gps_seconds++;
-#ifdef UBLOX_PARSE_UBLOX
       trace << ',' << RTC::seconds();
-#endif
-
 #endif
       trace << ',';
 
@@ -269,19 +268,13 @@ trace << PSTR("Hey!\n");
 
 };
 
-#ifdef  UBLOX_PARSE_UBLOX
 static MyGPS gps( &uart1 );
-#else
-static MyGPS gps;
-#endif
 
 //--------------------------
 
 void setup()
 {
-#ifdef UBLOX_PARSE_UBLOX
   RTC::begin();
-#endif
 
   // Start the normal trace output
   uart.begin(9600);
@@ -294,11 +287,19 @@ void setup()
   // Start the UART for the GPS device
   uart1.begin(9600);
 
-  // Turn off the predefined standard messages
+  // Turn off the preconfigured NMEA standard messages
   for (uint8_t i=NMEAGPS::NMEA_FIRST_MSG; i<=NMEAGPS::NMEA_LAST_MSG; i++) {
-    ublox::configNMEA( gps, static_cast<NMEAGPS::nmea_msg_t>(i), 0 );
+    ublox::configNMEA( gps, (NMEAGPS::nmea_msg_t) i, 0 );
   }
 
+  // Turn on the UBX status message
+  gps.enable_msg( ublox::UBX_NAV, ublox::UBX_NAV_STATUS );
+
+  // Turn off things that may be left on by a previous build
+  gps.disable_msg( ublox::UBX_NAV, ublox::UBX_NAV_TIMEGPS );
+  gps.disable_msg( ublox::UBX_NAV, ublox::UBX_NAV_TIMEUTC );
+  gps.disable_msg( ublox::UBX_NAV, ublox::UBX_NAV_VELNED );
+  gps.disable_msg( ublox::UBX_NAV, ublox::UBX_NAV_POSLLH );
 }
 
 //--------------------------
@@ -306,6 +307,4 @@ void setup()
 void loop()
 {
   gps.run();
-
-//  Power::sleep();
 }
