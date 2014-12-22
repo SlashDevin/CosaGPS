@@ -152,7 +152,7 @@ void loop()
 {
   while (uart1.available())
     if ((gps.decode( uart1.getchar() ) == NMEAGPS::DECODE_COMPLETED) &&
-        (gps.nmeaMessage == (NMEAGPS::nmea_msg_t) ubloxNMEA::PUBX_04)) {
+        (gps.nmeaMessage == (NMEAGPS::nmea_msg_t) ubloxNMEA::PUBX_00)) {
       sentenceReceived();
       poll();
     }

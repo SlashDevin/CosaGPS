@@ -20,10 +20,21 @@ class MyGPS : public ubloxGPS
 public:
 
     gps_fix merged;
-    enum { GETTING_STATUS, GETTING_LEAP_SECONDS, GETTING_UTC, RUNNING } state;
-
+    enum
+      {
+        GETTING_STATUS, 
+        GETTING_LEAP_SECONDS, 
+        GETTING_UTC, 
+        RUNNING
+      }
+        state:8;
+    bool ok_to_process;
+    
     MyGPS( IOStream::Device *device ) : ubloxGPS( device )
-      { state = GETTING_STATUS; };
+      {
+        state = GETTING_STATUS;
+        ok_to_process = false;
+      };
 
     //--------------------------
 
@@ -40,7 +51,7 @@ public:
 
       while (uart1.available()) {
         if (decode( uart1.getchar() ) == DECODE_COMPLETED) {
-          if (processSentence())
+          if (ok_to_process && processSentence())
             since = 0;
         }
       }
@@ -52,6 +63,9 @@ public:
 
     bool processSentence()
       {
+        bool old_otp = ok_to_process;
+        ok_to_process = false;
+
         bool ok = false;
 
         if (!ok && (nmeaMessage >= (nmea_msg_t)ubloxGPS::PUBX_00)) {
@@ -70,18 +84,23 @@ public:
               if (fix().status != gps_fix::STATUS_NONE) {
                 trace << PSTR("Acquired status: ") << fix().status << endl;
 #if defined(GPS_FIX_TIME) & defined(GPS_FIX_DATE)
-                state = GETTING_LEAP_SECONDS;
-                enable_msg( ublox::UBX_NAV, ublox::UBX_NAV_TIMEGPS );
+                if (enable_msg( ublox::UBX_NAV, ublox::UBX_NAV_TIMEGPS ))
+                  state = GETTING_LEAP_SECONDS;
+                else
+                  trace << PSTR("enable TIMEGPS failed!\n");
               }
               break;
 
             case GETTING_LEAP_SECONDS:
               if (GPSTime::leap_seconds != 0) {
                 trace << PSTR("Acquired leap seconds: ") << GPSTime::leap_seconds << endl;
-                disable_msg( ublox::UBX_NAV, ublox::UBX_NAV_TIMEGPS );
-                enable_msg( ublox::UBX_NAV, ublox::UBX_NAV_TIMEUTC );
-                state = GETTING_UTC;
               }
+              if (!disable_msg( ublox::UBX_NAV, ublox::UBX_NAV_TIMEGPS ))
+                trace << PSTR("disable TIMEGPS failed!\n");
+              else if (!enable_msg( ublox::UBX_NAV, ublox::UBX_NAV_TIMEUTC ))
+                trace << PSTR("enable TIMEUTC failed!\n");
+              else
+                state = GETTING_UTC;
               break;
 
             case GETTING_UTC:
@@ -89,28 +108,37 @@ public:
                 trace << PSTR("Acquired UTC: ") << fix().dateTime << endl;
                 trace << PSTR("Acquired Start-of-Week: ") << GPSTime::start_of_week() << endl;
 
-                state = RUNNING;
-
 #if defined(GPS_FIX_LOCATION) | defined(GPS_FIX_ALTITUDE) | \
     defined(GPS_FIX_SPEED) | defined(GPS_FIX_HEADING)
-                disable_msg( ublox::UBX_NAV, ublox::UBX_NAV_TIMEUTC );
+                if (!disable_msg( ublox::UBX_NAV, ublox::UBX_NAV_TIMEUTC ))
+                  trace << PSTR("disable TIMEUTC failed!\n");
+                else
+                  state = RUNNING;
+#else
+                state = RUNNING;
 #endif
 
 #else
-                state = RUNNING;
 
 #if defined(GPS_FIX_TIME) | defined(GPS_FIX_DATE)
-                enable_msg( ublox::UBX_NAV, ublox::UBX_NAV_TIMEUTC );
+                if (!enable_msg( ublox::UBX_NAV, ublox::UBX_NAV_TIMEUTC ))
+                  trace << PSTR("enable TIMEUTC failed!\n");
+                else
+                  state = RUNNING;
+#else
+                state = RUNNING;
 #endif
 
 #endif
 
 #if defined(GPS_FIX_LOCATION) | defined(GPS_FIX_ALTITUDE)
-                enable_msg( ublox::UBX_NAV, ublox::UBX_NAV_POSLLH );
+                if (!enable_msg( ublox::UBX_NAV, ublox::UBX_NAV_POSLLH ))
+                  trace << PSTR("enable POSLLH failed!\n");
 #endif
 
 #if defined(GPS_FIX_SPEED) | defined(GPS_FIX_HEADING)
-                enable_msg( ublox::UBX_NAV, ublox::UBX_NAV_VELNED );
+                if (!enable_msg( ublox::UBX_NAV, ublox::UBX_NAV_VELNED ))
+                  trace << PSTR("enable VELNED failed!\n");
 #endif
               }
               break;
@@ -154,6 +182,8 @@ public:
               break;
           }
         }
+
+        ok_to_process = old_otp;
 
         return ok;
       }
@@ -266,7 +296,7 @@ public:
 
     } // traceIt
 
-};
+} __attribute__((packed));
 
 static MyGPS gps( &uart1 );
 
@@ -300,6 +330,8 @@ void setup()
   gps.disable_msg( ublox::UBX_NAV, ublox::UBX_NAV_TIMEUTC );
   gps.disable_msg( ublox::UBX_NAV, ublox::UBX_NAV_VELNED );
   gps.disable_msg( ublox::UBX_NAV, ublox::UBX_NAV_POSLLH );
+
+  gps.ok_to_process = true;
 }
 
 //--------------------------
