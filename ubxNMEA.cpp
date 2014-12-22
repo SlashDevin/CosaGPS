@@ -2,12 +2,6 @@
 
 #include "Cosa/Trace.hh"
 
-static char toHexDigit( uint8_t val )
-{
-  val &= 0x0F;
-  return (val >= 10) ? ((val - 10) + 'A') : (val + '0');
-}
-
 static const char pubx[] __PROGMEM =  "PUBX";
 const char * const ubloxNMEA::ublox_nmea[] __PROGMEM = { pubx };
 const uint8_t ubloxNMEA::ublox_nmea_size = membersof(ublox_nmea);

@@ -11,6 +11,8 @@
 
 #include "NMEAGPS.h"
 
+extern UART uart1;
+
 class MyGPS : public IOStream::Device, public Event::Handler
 {
 protected:
@@ -22,6 +24,8 @@ public:
      * Constructor
      */
     MyGPS() {};
+
+    const gps_fix & fix() const { return merged; };
 
     void on_event( uint8_t, uint16_t )
     {
@@ -60,71 +64,68 @@ public:
       return c;
     };
 
-    const gps_fix & fix() const { return merged; };
+    //--------------------------
+
+//#define USE_FLOAT
+
+    void traceIt()
+    {
+      if (fix().valid.date || fix().valid.time) {
+        time_t copy = fix().dateTime;
+        trace << copy << PSTR(".");
+        if (fix().dateTime_cs < 10)
+          trace << '0';
+        trace << fix().dateTime_cs;
+      } else {
+        //  Apparently we don't have a fix yet, ask for a ZDA (Zulu Date and Time)
+        NMEAGPS::poll( &uart1, NMEAGPS::NMEA_ZDA );
+      }
+      trace << PSTR(",");
+
+#ifdef USE_FLOAT
+      trace.width(3);
+      trace.precision(6);
+      if (fix().valid.location)
+        trace << fix().latitude() << PSTR(",") << fix().longitude();
+      else
+        trace << PSTR(",");
+      trace << PSTR(",");
+      trace.precision(2);
+      if (fix().valid.heading)
+        trace << fix().heading();
+      trace << PSTR(",");
+      trace.precision(3);
+      if (fix().valid.speed)
+        trace << fix().speed();
+      trace << PSTR(",");
+      trace.precision(2);
+      if (fix().valid.altitude)
+        trace << fix().altitude();
+#else
+      if (fix().valid.location)
+        trace << fix().latitudeL() << PSTR(",") << fix().longitudeL();
+      else
+        trace << PSTR(",");
+      trace << PSTR(",");
+      if (fix().valid.heading)
+        trace << fix().heading_cd();
+      trace << PSTR(",");
+      if (fix().valid.speed)
+        trace << fix().speed_mkn();
+      trace << PSTR(",");
+      if (fix().valid.altitude)
+        trace << fix().altitude_cm();
+#endif
+      trace << endl;
+
+    } // traceIt
+
 };
 
 static MyGPS gps;
 
 static IOBuffer<UART::BUFFER_MAX> obuf;
 UART uart1(1, &gps, &obuf);
-
-//--------------------------
-
-//#define USE_FLOAT
-
-static void traceIt()
-{
-  const gps_fix & fix = gps.fix();
-
-  if (fix.valid.date || fix.valid.time) {
-    time_t copy = fix.dateTime;
-    trace << copy << PSTR(".");
-    if (fix.dateTime_cs < 10)
-      trace << '0';
-    trace << fix.dateTime_cs;
-  } else {
-    //  Apparently we don't have a fix yet, ask for a ZDA (Zulu Date and Time)
-    NMEAGPS::poll( &uart1, NMEAGPS::NMEA_ZDA );
-  }
-  trace << PSTR(",");
-
-#ifdef USE_FLOAT
-  trace.width(3);
-  trace.precision(6);
-  if (fix.valid.location)
-    trace << fix.latitude() << PSTR(",") << fix.longitude();
-  else
-    trace << PSTR(",");
-  trace << PSTR(",");
-  trace.precision(2);
-  if (fix.valid.heading)
-    trace << fix.heading();
-  trace << PSTR(",");
-  trace.precision(3);
-  if (fix.valid.speed)
-    trace << fix.speed();
-  trace << PSTR(",");
-  trace.precision(2);
-  if (fix.valid.altitude)
-    trace << fix.altitude();
-#else
-  if (fix.valid.location)
-    trace << fix.latitudeL() << PSTR(",") << fix.longitudeL();
-  else
-    trace << PSTR(",");
-  trace << PSTR(",");
-  if (fix.valid.heading)
-    trace << fix.heading_cd();
-  trace << PSTR(",");
-  if (fix.valid.speed)
-    trace << fix.speed_mkn();
-  trace << PSTR(",");
-  if (fix.valid.altitude)
-    trace << fix.altitude_cm();
-#endif
-  trace << endl;
-
-} // traceIt
 
 //--------------------------
 

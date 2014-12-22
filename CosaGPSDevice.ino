@@ -37,7 +37,7 @@ public:
      */
     virtual int putchar( char c )
     {
-      if (gps.decode(c))
+      if (gps.decode(c) == NMEAGPS::DECODE_COMPLETED)
         frame_received = true;
 
       return c;
@@ -58,9 +58,6 @@ static MyGPS gps;
 
 static IOBuffer<UART::BUFFER_MAX> obuf;
 UART uart1(1, &gps, &obuf);
-
-static clock_t now = 0;
-static clock_t lastTrace = 0;
 
 //--------------------------
 

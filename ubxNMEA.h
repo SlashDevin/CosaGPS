@@ -39,8 +39,8 @@
  * stored in member /nmeaMessage/.  No valid flags would be available.
  *
  */
-//#define NMEAGPS_PARSE_PUBX_00
-//#define NMEAGPS_PARSE_PUBX_04
+#define NMEAGPS_PARSE_PUBX_00
+#define NMEAGPS_PARSE_PUBX_04
 
 #ifndef NMEAGPS_DERIVED_TYPES
 #error You must "#define NMEAGPS_DERIVED_TYPES" in NMEAGPS.h!
@@ -54,14 +54,6 @@ class ubloxNMEA : public NMEAGPS
 public:
 
     ubloxNMEA() {};
-
-    /**
-     * Process one character from a ublox device.  The internal state machine
-     * tracks what part of the NMEA/UBX packet has been received so far.  As the
-     * packet is received, members of the /fix/ structure are updated.  
-     * @return true when new /fix/ data is available and coherent.
-     */
-    decode_t decode( char c );
 
     /** ublox proprietary NMEA message types. */
     enum pubx_msg_t {
@@ -78,9 +70,6 @@ protected:
 
     const msg_table_t *msg_table() const { return &ublox_msg_table; };
 
-    decode_t parseCommand( char c );
-
-protected:
     bool parseField( char chr );
 };
 
