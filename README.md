@@ -50,11 +50,13 @@ merged |= gps_device.fix();
 RAM requirements
 =======
 As data is received from the device, various portions of a `fix` are modified.  In 
-fact, no buffering RAM is required.  
-Each character affects the internal state machine and may also contribute to a data 
-member (e.g., latitude).
+fact, _**no buffering RAM is required**_.  Each character affects the internal state machine and may 
+also contribute to a data member (e.g., latitude).
+
 A fully-configured `fix` requires only 32 bytes, and the NMEA state machine requires 
-7 bytes, for a total of **39 bytes** (add 2 more bytes if `DERIVED_NMEA_TYPES` enable virtuals).  The minimally-configured `fix` requires only 
+7 bytes, for a total of **39 bytes** (add 2 more bytes if `DERIVED_NMEA_TYPES` enable virtuals).
+
+The minimally-configured `fix` requires only 
 2 bytes, for a total of **10 bytes** (structure alignment may add 1 byte).
 
 For example, if your application only requires an accurate one pulse-per-second, you 
@@ -87,3 +89,9 @@ Several programs are provided to demonstrate how to use the classes in these dif
 Preprocessor symbol `USE_FLOAT` can be used to select integer or floating-point output.
 
 `CosaGPSTest.ino` is a self-test program.  Various strings are passed to `decode` and the expected pass or fail results are displayed.
+
+Acknowledgements
+==========
+Mikal Hart's [TinyGPS](https://github.com/mikalhart/TinyGPS)
+
+tht's [Cosa Device](http://forum.arduino.cc/index.php?topic=150299.msg1863220#msg1863220)
