@@ -128,6 +128,8 @@ NMEAGPS::decode_t NMEAGPS::decode( char c )
               crc ^= c;
 
               if (fieldIndex == 0) {
+                //  The first field is the sentence type.  It will be used later
+                //  by the virtual parseField
                 decode_t cmd_res = parseCommand( c );
                 if (cmd_res == DECODE_COMPLETED) {
                   m_fix.valid.as_byte = 0;
@@ -338,26 +340,9 @@ bool NMEAGPS::parseField(char chr)
           switch (fieldIndex) {
               CASE_TIME(1);
 #ifdef GPS_FIX_DATE
-              case 2:                         // Date
-                  if (chrCount == 0)
-                    m_fix.dateTime.date  = 0;
-                  if (chr != ',')
-                    m_fix.dateTime.date  = (m_fix.dateTime.date *10) + (chr - '0');
-                  break;
-              case 3:                         // Month
-                  if (chrCount == 0)
-                    m_fix.dateTime.month = 0;
-                  if (chr != ',')
-                    m_fix.dateTime.month = (m_fix.dateTime.month*10) + (chr - '0');
-                  break;
-              case 4:                         // Year
-                  if (chrCount == 0)
-                    m_fix.dateTime.year  = 0;
-                  if ((2 <= chrCount) && (chrCount <= 3))
-                    m_fix.dateTime.year  = (m_fix.dateTime.year *10) + (chr - '0');
-                  else if (chr == ',')
-                    m_fix.valid.date = true;
-                  break;
+              case 2: parseInt( m_fix.dateTime.date , chr ); break;
+              case 3: parseInt( m_fix.dateTime.month, chr ); break;
+              case 4: m_fix.valid.date = parseInt( m_fix.dateTime.year, chr );    break;
 #endif
           }
 #endif

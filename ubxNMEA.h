@@ -71,6 +71,6 @@ protected:
     const msg_table_t *msg_table() const { return &ublox_msg_table; };
 
     bool parseField( char chr );
-};
+} __attribute__((packed));
 
 #endif

@@ -47,7 +47,7 @@
 //#define NMEAGPS_PARSE_GLL
 //#define NMEAGPS_PARSE_GSA
 //#define NMEAGPS_PARSE_GSV
-#define NMEAGPS_PARSE_RMC
+//#define NMEAGPS_PARSE_RMC
 //#define NMEAGPS_PARSE_VTG
 //#define NMEAGPS_PARSE_ZDA
 
@@ -66,6 +66,8 @@
 
 class NMEAGPS
 {
+    NMEAGPS( const NMEAGPS & );
+
 public:
     /** NMEA message types. */
     enum nmea_msg_t {
@@ -106,7 +108,7 @@ protected:
     static const uint8_t NMEA_FIRST_STATE = NMEA_IDLE;
     static const uint8_t NMEA_LAST_STATE  = NMEA_RECEIVING_CRC2;
 
-    rxState_t rxState;
+    rxState_t rxState:8;
 
 public:
 
@@ -132,7 +134,7 @@ public:
     /**
      * Most recent NMEA sentence type received.
      */
-    enum nmea_msg_t nmeaMessage;
+    enum nmea_msg_t nmeaMessage:8;
 
     
     //  Current fix accessor.
@@ -335,12 +337,7 @@ PARSE_FIELD(i+3,EW);
 
     bool parseSatellites( char chr )
     {
-      if (chrCount == 0)
-        m_fix.satellites = 0;
-      if (chr != ',')
-        m_fix.satellites = m_fix.satellites*10 + (chr - '0');
-      else
-        m_fix.valid.satellites = true;
+      m_fix.valid.satellites = parseInt( m_fix.satellites, chr );
       return true;
     }
 #else
@@ -371,6 +368,18 @@ PARSE_FIELD(i+3,EW);
 #endif
 
     bool parseFloat( gps_fix::whole_frac & val, char chr, uint8_t max_decimal );
+
+    bool parseInt( uint8_t &val, uint8_t chr )
+    {
+      bool is_comma = (chr == ',');
+      if (chrCount == 0) {
+        if (is_comma)
+          return false;
+        val = (chr - '0');
+      } else if (!is_comma)
+        val = (val*10) + (chr - '0');
+      return true;
+    }
 
 } __attribute__((packed));
 

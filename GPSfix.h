@@ -11,7 +11,7 @@
 #define GPS_FIX_SPEED
 #define GPS_FIX_HEADING
 #define GPS_FIX_SATELLITES
-#define GPS_FIX_HDOP
+//#define GPS_FIX_HDOP
 
 class gps_fix {
 public:
@@ -88,9 +88,13 @@ public:
   uint16_t           hdop; // x 1000
 #endif
 
+#ifdef GPS_FIX_SATELLITES
+  uint8_t   satellites;
+#endif
+
 #if defined(GPS_FIX_DATE) | defined(GPS_FIX_TIME)
-    struct time_t dateTime;
-    uint8_t       dateTime_cs; // hundredths of a second
+  struct time_t dateTime;
+  uint8_t       dateTime_cs; // hundredths of a second
 #endif
 
   /**
@@ -107,17 +111,9 @@ public:
     STATUS_STD,
     STATUS_DGPS,
     STATUS_EST
-  } __attribute__((packed));
+  };
 
-  union {
-    struct {
-      status_t  status    :3;
-#ifdef GPS_FIX_SATELLITES
-      uint8_t   satellites:5;
-#endif
-    } __attribute__((packed));
-    uint8_t status_satellites;
-  } __attribute__((packed));
+  status_t  status:8;
 
   //  Flags to indicate which members of this fix are valid.
 
@@ -178,7 +174,11 @@ public:
     hdg.init();
 #endif
 
-    status_satellites = 0;
+#ifdef GPS_FIX_SATELLITES
+    satellites = 0;
+#endif
+
+    status = STATUS_NONE;
 
 #ifdef GPS_FIX_HDOP
     hdop = 0;

@@ -275,6 +275,6 @@ private:
       return true;
     }
 #endif
-};
+} __attribute__((packed));
 
 #endif
