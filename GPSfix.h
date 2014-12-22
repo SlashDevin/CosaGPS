@@ -11,7 +11,7 @@
 #define GPS_FIX_SPEED
 #define GPS_FIX_HEADING
 #define GPS_FIX_SATELLITES
-//#define GPS_FIX_HDOP
+#define GPS_FIX_HDOP
 
 class gps_fix {
 public:
@@ -194,59 +194,60 @@ public:
 
     gps_fix & operator |=( const gps_fix & r )
     {
-      if (r.status != STATUS_NONE)
+      if (r.status != STATUS_NONE) {
         status = r.status;
 
 #ifdef GPS_FIX_DATE
-      if (r.valid.date) {
-        dateTime.date  = r.dateTime.date;
-        dateTime.month = r.dateTime.month;
-        dateTime.year  = r.dateTime.year;
-      }
+        if (r.valid.date) {
+          dateTime.date  = r.dateTime.date;
+          dateTime.month = r.dateTime.month;
+          dateTime.year  = r.dateTime.year;
+        }
 #endif
 
 #ifdef GPS_FIX_TIME
-      if (r.valid.time) {
-        dateTime.hours = r.dateTime.hours;
-        dateTime.minutes = r.dateTime.minutes;
-        dateTime.seconds = r.dateTime.seconds;
-        dateTime_cs      = r.dateTime_cs;
-      }
+        if (r.valid.time) {
+          dateTime.hours = r.dateTime.hours;
+          dateTime.minutes = r.dateTime.minutes;
+          dateTime.seconds = r.dateTime.seconds;
+          dateTime_cs      = r.dateTime_cs;
+        }
 #endif
 
 #ifdef GPS_FIX_LOCATION
-      if (r.valid.location) {
-        lat = r.lat;
-        lon = r.lon;
-      }
+        if (r.valid.location) {
+          lat = r.lat;
+          lon = r.lon;
+        }
 #endif
 
 #ifdef GPS_FIX_ALTITUDE
-      if (r.valid.altitude)
-        alt = r.alt;
+        if (r.valid.altitude)
+          alt = r.alt;
 #endif
 
 #ifdef GPS_FIX_HEADING
-      if (r.valid.heading)
-        hdg = r.hdg;
+        if (r.valid.heading)
+          hdg = r.hdg;
 #endif
 
 #ifdef GPS_FIX_SPEED
-      if (r.valid.speed)
-        spd = r.spd;
+        if (r.valid.speed)
+          spd = r.spd;
 #endif
 
 #ifdef GPS_FIX_SATELLITES
-      if (r.valid.satellites)
-        satellites = r.satellites;
+        if (r.valid.satellites)
+          satellites = r.satellites;
 #endif
 
 #ifdef GPS_FIX_HDOP
-      if (r.valid.hdop)
-        hdop = r.hdop;
+        if (r.valid.hdop)
+          hdop = r.hdop;
 #endif
 
-      valid.as_byte |= r.valid.as_byte;
+        valid.as_byte |= r.valid.as_byte;
+      }
 
       return *this;
     }

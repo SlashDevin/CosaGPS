@@ -1,33 +1,40 @@
 #ifndef _UBXGPS_H_
 #define _UBXGPS_H_
 
-#include <avr/pgmspace.h>
+/**
+ * @file UBXGPS.h
+ * @version 2.1
+ *
+ * @section License
+ * Copyright (C) 2014, SlashDevin
+ *
+ * This library is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 2.1 of the License, or (at your option) any later version.
+ *
+ * This library is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
+ */
+
+#include "ubxNMEA.h"
+#include "ubxmsg.h"
+#include "GPSTime.h"
+
+#include "Cosa/Power.hh"
+
+// NOTE: RTC::millis() is used for ACK timing
 
 #include "Cosa/Trace.hh"
-
-/*
- * Enable/disable Neo-6 protocols.  Either or both can be enabled
- */
-//#define UBLOX_PARSE_NMEA
-#define UBLOX_PARSE_UBLOX
-
-/**
- * Enable/disable the parsing of specific NMEA sentences.
- *
- * Configuring out a sentence prevents its fields from being parsed.
- * However, the sentence type will still be recognized by /decode/ and 
- * stored in member /nmeaMessage/.  No valid flags will be true.
- *
- */
-#define NMEAGPS_PARSE_PUBX_00
-#define NMEAGPS_PARSE_PUBX_04
 
 /**
  * Enable/disable the parsing of specific UBX messages.
  *
  * Configuring out a message prevents its fields from being parsed.
  * However, the message type will still be recognized by /decode/ and 
- * stored in member /nmeaMessage/.  No valid flags will be true.
+ * stored in member /rx_msg/.  No valid flags would be available.
  */
 
 #define UBLOX_PARSE_STATUS
@@ -38,46 +45,14 @@
 //#define UBLOX_PARSE_CFGNAV5
 //#define UBLOX_PARSE_MONVER
  
-//----------------------------
 
-#ifdef UBLOX_PARSE_NMEA
-#define UBLOX_INHERITANCE : public NMEAGPS
 
-#include "NMEAGPS.h"
-#ifndef NMEAGPS_DERIVED_TYPES
-#error You must "#define NMEAGPS_DERIVED_TYPES" in NMEAGPS.h!
-#endif
-
-#else
-
-#define UBLOX_INHERITANCE
-#include "GPSfix.h"
-
-#endif
-
-#ifdef  UBLOX_PARSE_UBLOX
-
-#include "ubxmsg.h"
-
-#include "Cosa/Power.hh"
-
-// NOTE: RTC::millis() is used for ACK timing
-
-#endif
-
-class ubloxGPS UBLOX_INHERITANCE
+class ubloxGPS : public ubloxNMEA
 {
     ubloxGPS( const ubloxGPS & );
 
 public:
 
-#ifndef UBLOX_PARSE_NMEA
-    enum decode_t { DECODE_CHR_INVALID, DECODE_CHR_OK, DECODE_COMPLETED };
-#endif
-
-#ifndef UBLOX_PARSE_UBLOX
-    ubloxGPS() {};
-#else
     ubloxGPS( IOStream::Device *device )
       :
         storage( (ublox::msg_t *) NULL ),
@@ -101,62 +76,15 @@ public:
      */
     ublox::msg_t & rx() { return m_rx_msg; }
 
-#if defined(GPS_FIX_DATE) | defined(GPS_FIX_TIME)
-    /**
-     * GPS time is offset from UTC by a number of leap seconds.  To convert a GPS
-     * time to UTC time, the current number of leap seconds must be known.
-     * See http://en.wikipedia.org/wiki/Global_Positioning_System#Leap_seconds
-     */
-    static uint8_t leap_seconds;
-
-    /**
-     * Some receivers report time WRT start of the current week, defined as
-     * Sunday 00:00:00.  To save fairly expensive date/time calculations,
-     * the UTC start of week is cached
-     */
-    static void start_of_week( time_t & now )
-      {
-        now.set_day();
-        s_start_of_week =
-          (clock_t) now  -  
-          (clock_t) ((((now.day-1)*24L + 
-                       now.hours)*60L + 
-                       now.minutes)*60L +
-                       now.seconds);
-      }
-
-    static clock_t start_of_week()
+    bool enable_msg( ublox::msg_class_t msg_class, ublox::msg_id_t msg_id )
     {
-      return s_start_of_week;
+      return send( ublox::cfg_msg_t( msg_class, msg_id, 1 ) );
     }
-
-    /*
-     * Convert a GPS time-of-week to UTC.
-     * Requires /leap_seconds/ and /start_of_week/.
-     */
-    static clock_t TOW_to_UTC( uint32_t gps_time_of_week )
-      { return (clock_t) (s_start_of_week + gps_time_of_week - leap_seconds); }
-
-    /**
-     * Set /fix/ timestamp from a GPS time-of-week in milliseconds.
-     * Requires /leap_seconds/ and /start_of_week/.
-     **/
-    bool from_TOWms( uint32_t time_of_week_ms )
+    bool disable_msg( ublox::msg_class_t msg_class, ublox::msg_id_t msg_id )
     {
-//trace << PSTR("from_TOWms(") << time_of_week_ms << PSTR("), sow = ") << start_of_week() << PSTR(", leap = ") << leap_seconds << endl;
-      bool ok = (start_of_week() != 0) && (leap_seconds != 0);
-      if (ok) {
-        time_of_week_ms /= 10UL;
-        clock_t tow_s = time_of_week_ms/100UL;
-        m_fix.dateTime = TOW_to_UTC( tow_s ); 
-        m_fix.dateTime_cs = ((uint8_t)(time_of_week_ms - tow_s*100UL)) % 100;
-        m_fix.valid.time = true;
-        m_fix.valid.date = true;
-      }
-      return ok;
+      return send( ublox::cfg_msg_t( msg_class, msg_id, 0 ) );
     }
-#endif
-
+    
     /**
      * Send a message (non-blocking).
      *    Although multiple /send_request/s can be issued,
@@ -217,19 +145,13 @@ public:
       return send( poll_msg, reply_msg );
     };
 
-#ifdef UBLOX_PARSE_NMEA
-#define UBX_IDLE_VALUE NMEA_IDLE
-#define UBX_FIRST_VALUE NMEA_LAST_STATE+1
-#else
-#define UBX_IDLE_VALUE 0
-#define UBX_FIRST_VALUE 1
-#endif
-
 protected:
 
+    bool parseField( char chr );
+
     enum ubxState_t {
-        UBX_IDLE  = UBX_IDLE_VALUE,
-        UBX_SYNC2 = UBX_FIRST_VALUE,
+        UBX_IDLE  = NMEA_IDLE,
+        UBX_SYNC2 = NMEA_LAST_STATE+1,
         UBX_HEAD,
         UBX_RECEIVING_DATA,
         UBX_CRC_A,
@@ -237,18 +159,6 @@ protected:
     };
     static const ubxState_t UBX_FIRST_STATE = UBX_SYNC2;
     static const ubxState_t UBX_LAST_STATE  = UBX_CRC_B;
-
-#ifndef UBLOX_PARSE_NMEA
-public:
-    const struct gps_fix & fix() const { return m_fix; };
-private:
-    ubxState_t rxState;
-    typedef ubxState_t rxState_t;
-    uint8_t         chrCount;  // index of current character in current field
-protected:
-    struct gps_fix m_fix;
-    bool            coherent:1;
-#endif
 
     inline void write
       ( uint8_t c, uint8_t & crc_a, uint8_t & crc_b ) const
@@ -269,26 +179,26 @@ protected:
     }
     bool receiving() const
     {
-      return (rxState != UBX_IDLE) || (m_device && m_device->available());
+      return (rxState != (rxState_t)UBX_IDLE) || (m_device && m_device->available());
     }
 
-    //  This method is called from inside /wait_for_idle/.
+    //  /run/ is called from inside /wait_for_idle/.
     //
     //  If a derived class processes incoming chars in the background
     //  (e.g., a derived IOStream::Device::/putchar/ called from the IRQ),
-    //  this default /delay/ method is sufficient.
+    //  this default method is sufficient.
     //
     //  If /this/ instance processes characters in the foreground,
     //  /run/ must be provided to continue decoding the input stream while 
     //  waiting for UBX replies.  For example,
+    //
     //            while (uart.available())
     //              decode( uart.getchar() );
 
     virtual void run() { Power::sleep(); };
 
-    // Derived class should override this if the contents of a
-    //   particular message need to be saved.
-    // This executes in an interrupt context, so be quick!
+    // Override this if the contents of a particular message need to be saved.
+    // This may execute in an interrupt context, so be quick!
     //  NOTE: the ublox::msg_t.length will get stepped on, so you may need to
     //  set it every time if you are using a union for your storage.
     virtual ublox::msg_t *storage_for( const ublox::msg_t & rx_msg )
@@ -342,8 +252,6 @@ private:
 
     IOStream::Device *m_device;
 
-    static clock_t s_start_of_week;
-
 #if defined(GPS_FIX_TIME) & defined(GPS_FIX_DATE)
     bool parseTOW( uint8_t chr )
     {
@@ -355,39 +263,18 @@ private:
       if (chrCount == 3) {
         uint32_t tow = *((uint32_t *) &m_fix.dateTime);
 //trace << PSTR("@ ") << tow;
-        if (!from_TOWms( tow ))
+        uint16_t ms;
+        if (GPSTime::from_TOWms( tow, m_fix.dateTime, ms )) {
+          m_fix.dateTime_cs = ms / 10;
+          m_fix.valid.time = true;
+          m_fix.valid.date = true;
+        } else
           m_fix.dateTime = (clock_t) 0L;
 //trace << PSTR(".") << m_fix.dateTime_cs;
       }
       return true;
     }
 #endif
-#endif
-
-#ifdef UBLOX_PARSE_NMEA
-public:
-
-    /** ublox proprietary NMEA message types. */
-    enum pubx_msg_t {
-        PUBX_00 = NMEA_LAST_MSG+1,
-        PUBX_04 = PUBX_00+4
-    };
-    static const nmea_msg_t PUBX_FIRST_MSG = (nmea_msg_t) PUBX_00;
-    static const nmea_msg_t PUBX_LAST_MSG  = (nmea_msg_t) PUBX_04;
-
-protected:
-    static const char * const ublox_nmea[] __PROGMEM;
-    static const uint8_t ublox_nmea_size;
-    static const msg_table_t ublox_msg_table __PROGMEM;
-
-    const msg_table_t *msg_table() const { return &ublox_msg_table; };
-
-    decode_t parseCommand( char c );
-
-#endif
-
-protected:
-    bool parseField( char chr );
 };
 
 #endif

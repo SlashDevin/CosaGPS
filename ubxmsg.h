@@ -50,7 +50,7 @@ namespace ublox {
           {
             length    = 0;
           };
-          msg_t( enum msg_class_t m, enum msg_id_t i, uint16_t l )
+          msg_t( enum msg_class_t m, enum msg_id_t i, uint16_t l = 0 )
           {
               msg_class = m;
               msg_id    = i;
@@ -212,12 +212,12 @@ namespace ublox {
           if (flags.diff_soln)
             return gps_fix::STATUS_DGPS;
           switch (status) {
-            case NAV_STAT_NONE     : return gps_fix::STATUS_NONE;
             case NAV_STAT_DR_ONLY  : return gps_fix::STATUS_EST;
             case NAV_STAT_2D       :
             case NAV_STAT_3D       :
             case NAV_STAT_GPS_DR   : return gps_fix::STATUS_STD;
             case NAV_STAT_TIME_ONLY: return gps_fix::STATUS_TIME_ONLY;
+            default                : return gps_fix::STATUS_NONE;
           }
         }
         

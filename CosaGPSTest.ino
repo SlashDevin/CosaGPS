@@ -5,8 +5,6 @@
 
 #include "Cosa/IOStream/Driver/UART.hh"
 #include "Cosa/Trace.hh"
-#include "Cosa/Watchdog.hh"
-
 #include "./NMEAGPS.h"
 
 static NMEAGPS gps;
@@ -72,9 +70,6 @@ static uint8_t failed = 0;
 
 void setup()
 {
-  // Watchdog for sleeping
-  Watchdog::begin( 16, Watchdog::push_timeout_events );
-
   // Start the normal trace output
   uart.begin(9600);
   trace.begin(&uart, PSTR("CosaNMEAGPS: started"));

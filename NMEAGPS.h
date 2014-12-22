@@ -20,12 +20,14 @@
  */
 
 /**
- * GPS Parser for NEO-6 Modules.
+ * NMEA 0183 Parser for generic GPS Modules.
  *
  * @section Limitations
  * Very limited support for NMEA messages.
  * Only NMEA messages of types GGA, GLL, RMC, VTG, ZDA are parsed.
  */
+
+#include <avr/pgmspace.h>
 
 #include "GPSfix.h"
 
@@ -34,7 +36,7 @@
  *
  * Configuring out a sentence prevents its fields from being parsed.
  * However, the sentence type will still be recognized by /decode/ and 
- * stored in member /nmeaMessage/.  No valid flags will be true.
+ * stored in member /nmeaMessage/.  No valid flags would be available.
  *
  * Only RMC and ZDA contain date information.  Other
  * sentences contain time information.  Both date and time are 
@@ -45,14 +47,14 @@
 //#define NMEAGPS_PARSE_GLL
 //#define NMEAGPS_PARSE_GSA
 //#define NMEAGPS_PARSE_GSV
-//#define NMEAGPS_PARSE_RMC
+#define NMEAGPS_PARSE_RMC
 //#define NMEAGPS_PARSE_VTG
 //#define NMEAGPS_PARSE_ZDA
 
 /**
  * Configuration item for allowing derived types of NMEAGPS.
  * If defined, virtuals are used, with a slight size and time penalty.
- * If you derived classes from NMEAGPS, you must define NMEAGPS_DERIVED_TYPES.
+ * If you derive classes from NMEAGPS, you *must* define NMEAGPS_DERIVED_TYPES.
  */
  
 #define NMEAGPS_DERIVED_TYPES

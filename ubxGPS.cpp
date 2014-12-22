@@ -3,13 +3,7 @@
 #include "Cosa/RTC.hh"
 #include "Cosa/Trace.hh"
 
-#ifdef UBLOX_PARSE_UBLOX
 using namespace ublox;
-
-#if defined(GPS_FIX_DATE) | defined(GPS_FIX_TIME)
-uint8_t ubloxGPS::leap_seconds = 0;
-clock_t ubloxGPS::s_start_of_week = 0;
-#endif
 
 //----------------------------------
 
@@ -18,9 +12,6 @@ void ubloxGPS::rxBegin()
   m_rx_msg.init();
   storage = (msg_t *) NULL;
   chrCount = 0;
-#ifdef UBLOX_PARSE_NMEA
-  nmeaMessage = NMEA_UNKNOWN;
-#endif
 }
 
 bool ubloxGPS::rxEnd()
@@ -202,7 +193,6 @@ parseField( chr );
           break;
     }
 
-#ifdef UBLOX_PARSE_NMEA
     if (res == DECODE_CHR_INVALID) {
 //if ((c != '\r') && (c != '\n')) trace << 'x' << toHexDigit(c >> 4) << toHexDigit(c);
       if (rx().msg_class != UBX_UNK)
@@ -211,7 +201,6 @@ parseField( chr );
       // Delegate
       res = NMEAGPS::decode( c );
     }
-#endif
 
     return res;
 }
@@ -313,8 +302,6 @@ void ubloxGPS::write_P( const msg_t & msg )
  * Sends UBX command and optionally waits for the ack.
  */
 
-//#include "Cosa/trace.hh"
-
 bool ubloxGPS::send( const msg_t & msg, msg_t *reply_msg )
 {
 //trace << PSTR("::send - ") << hex << msg.msg_class << PSTR(" ") << hex << msg.msg_id << PSTR(" ");
@@ -354,116 +341,12 @@ bool ubloxGPS::send_P( const msg_t & msg, msg_t *reply_msg )
     return false;
 }
 
-#endif
-
-#ifdef UBLOX_PARSE_NMEA
-static const char pubx[] __PROGMEM =  "PUBX";
-const char * const ubloxGPS::ublox_nmea[] __PROGMEM = { pubx };
-const uint8_t ubloxGPS::ublox_nmea_size = membersof(ublox_nmea);
-
-const NMEAGPS::msg_table_t ubloxGPS::ublox_msg_table __PROGMEM =
-  {
-    ubloxGPS::PUBX_FIRST_MSG,
-    &NMEAGPS::nmea_msg_table,
-    ubloxGPS::ublox_nmea_size,
-    ubloxGPS::ublox_nmea
-  };
-#endif
-
 //---------------------------------------------
 
 bool ubloxGPS::parseField(char chr)
 {
     bool ok = true;
 
-#ifdef UBLOX_PARSE_NMEA
-    switch (nmeaMessage) {
-
-      case PUBX_00:
-        switch (fieldIndex) {
-            case 1:
-//trace << chr;
-              // The first field is actually a message subtype
-              if (chrCount == 0)
-                ok = (chr == '0');
-              else if (chrCount == 1)
-                nmeaMessage = (nmea_msg_t) (nmeaMessage + chr - '0');
-              break;
-#ifdef NMEAGPS_PARSE_PUBX_00
-            CASE_TIME(2);
-            CASE_LOC(3);
-            CASE_ALT(7);
-            case 8:
-              switch (chrCount) {
-                case 0:
-                  if (chr == 'N')
-                    m_fix.status = gps_fix::STATUS_NONE;
-                  else if (chr == 'T')
-                    m_fix.status = gps_fix::STATUS_TIME_ONLY;
-                  else if (chr == 'R')
-                    m_fix.status = gps_fix::STATUS_EST;
-                  else if (chr == 'G')
-                    m_fix.status = gps_fix::STATUS_STD;
-                  else if (chr == 'D')
-                    m_fix.status = gps_fix::STATUS_DGPS;
-                  else ok = false;
-                  break;
-                case 1:
-                  if (((chr == 'T') && (m_fix.status == gps_fix::STATUS_TIME_ONLY)) ||
-                      ((chr == 'K') && (m_fix.status == gps_fix::STATUS_EST)) ||
-                      (((chr == '2') || (chr == '3')) &&
-                       ((m_fix.status == gps_fix::STATUS_STD) || (m_fix.status == gps_fix::STATUS_DGPS))) ||
-                      ((chr == 'F') && (m_fix.status == gps_fix::STATUS_NONE)))
-                    ;
-                  else if ((chr == 'R') && (m_fix.status == gps_fix::STATUS_DGPS))
-                    m_fix.status = gps_fix::STATUS_EST;
-                  else
-                    ok = false;
-                  break;
-              }
-              break;
-            CASE_SPEED(11); // kph!
-            CASE_HEADING(12);
-            CASE_HDOP(15);
-            CASE_SAT(18);
-#endif
-        }
-        break;
-
-      case PUBX_04:
-#ifdef NMEAGPS_PARSE_PUBX_04
-        switch (fieldIndex) {
-            CASE_TIME(2);
-            CASE_DATE(3);
-#if defined(GPS_FIX_DATE) | defined(GPS_FIX_TIME)
-            case 4:
-              if (chrCount == 0) {
-                bool someDT = false;
-#if defined(GPS_FIX_DATE)
-                someDT |= m_fix.valid.date;
-#endif
-#if defined(GPS_FIX_TIME)
-                someDT |= m_fix.valid.time;
-#endif
-                if (someDT && (m_fix.status == gps_fix::STATUS_NONE))
-                  m_fix.status = gps_fix::STATUS_TIME_ONLY;
-              }
-              break;
-#endif
-        }
-#endif
-        break;
-
-      case NMEAGPS::NMEA_UNKNOWN:
-        break;
-
-      default:
-        return NMEAGPS::parseField(chr);
-    }
-
-#endif
-
-#ifdef UBLOX_PARSE_UBLOX
     switch (rx().msg_class) {
 
       case UBX_NAV:
@@ -588,21 +471,21 @@ bool ubloxGPS::parseField(char chr)
                   ok = parseTOW( chr );
                   break;
                 case 10:
-                  leap_seconds = (int8_t) chr;
+                  GPSTime::leap_seconds = (int8_t) chr;
                   break;
                 case 11:
                   {
                     ublox::nav_timegps_t::valid_t &v = *((ublox::nav_timegps_t::valid_t *) &chr);
                     if (!v.leap_seconds)
-                      leap_seconds = 0; // oops!
-//else trace << PSTR("leap ") << leap_seconds << ' ';
-                    if (leap_seconds != 0) {
+                      GPSTime::leap_seconds = 0; // oops!
+//else trace << PSTR("leap ") << GPSTime::leap_seconds << ' ';
+                    if (GPSTime::leap_seconds != 0) {
                       if (!v.time_of_week) {
                         m_fix.valid.date =
                         m_fix.valid.time = false;
-                      } else if ((start_of_week() == 0) &&
+                      } else if ((GPSTime::start_of_week() == 0) &&
                                  m_fix.valid.date && m_fix.valid.time) {
-                        start_of_week( m_fix.dateTime );
+                        GPSTime::start_of_week( m_fix.dateTime );
 //trace << m_fix.dateTime << PSTR(".") << m_fix.dateTime_cs;
                       }
                     }
@@ -633,8 +516,10 @@ bool ubloxGPS::parseField(char chr)
                     ublox::nav_timeutc_t::valid_t &v = *((ublox::nav_timeutc_t::valid_t *) &chr);
                     m_fix.valid.date =
                     m_fix.valid.time = (v.UTC & v.time_of_week);
-                    if (m_fix.valid.date && (start_of_week() == 0) && (leap_seconds != 0))
-                      start_of_week( m_fix.dateTime );
+                    if (m_fix.valid.date &&
+                        (GPSTime::start_of_week() == 0) &&
+                        (GPSTime::leap_seconds != 0))
+                      GPSTime::start_of_week( m_fix.dateTime );
 //trace << m_fix.dateTime << PSTR(".") << m_fix.dateTime_cs;
 //trace << ' ' << v.UTC << ' ' << v.time_of_week << ' ' << start_of_week();
                   }
@@ -687,7 +572,6 @@ bool ubloxGPS::parseField(char chr)
       default:
         break;
     }
-#endif
 
     return ok;
 }
