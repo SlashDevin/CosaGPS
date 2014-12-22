@@ -32,11 +32,12 @@ This also facilitates the merging of separately received packets into a coherent
 * number of satellites
 * horizontal dilution of precision (HDOP)
 
-Except for `status`, each member is conditionally compiled; any, all, or *no* members can be selected for parsing, storing and fusing.  This allows configuring an application to use the minimum amount of RAM for the particular `fix` members of interest.
-There is a separate validity flag for each of those members.
-Integers are used for all members, retaining full precision of the original data.   
-Optional floating-point accessors are provided.
-`fix` operators are defined which allow the developer to merge two fixes:
+Except for `status`, each member is conditionally compiled; any, all, or *no* members can be selected for parsing, storing and fusing.  This allows configuring an application to use the minimum amount of RAM for the particular `fix` members of interest:
+
+* separate validity flag for each of those members.
+* Integers are used for all members, retaining full precision of the original data.   
+* Optional floating-point accessors are provided.
+* A `fix` operator is defined which merges two fixes:
 ```
 NMEAGPS gps_device;
 gps_fix_t merged;
@@ -53,11 +54,12 @@ fact, no buffering RAM is required.
 Each character affects the internal state machine and may also contribute to a data 
 member (e.g., latitude).
 A fully-configured `fix` requires only 32 bytes, and the NMEA state machine requires 
-7 bytes, for a total of **39 bytes**.  The minimally-configured `fix` requires only 
-2 bytes, for a total of only **10 bytes** (structure alignment may add 1 byte).
+7 bytes, for a total of **39 bytes** (add 2 more bytes if `DERIVED_NMEA_TYPES` enable virtuals).  The minimally-configured `fix` requires only 
+2 bytes, for a total of **10 bytes** (structure alignment may add 1 byte).
 
 For example, if your application only requires an accurate one pulse-per-second, you 
-can configure it to parse *no* sentence types and retain *no* data members.  Even 
+can configure it to parse *no* sentence types and retain *no* data members.  Although the 
+`fix().status` can be checked, no valid flags are available.  Even 
 though no sentences are parsed and no data members are stored, the application will 
 still receive a `decoded` message type once per second:
 ```
@@ -67,11 +69,10 @@ while (uart1.available())
       sentenceReceived();
   }
 ```
-Although the `fix().status` can be checked, no valid flags are available.
 
-The `ubloxGPS` derived class adds 18 bytes to handle the more-complicated protocol, 
+The `ubloxGPS` derived class adds 15 bytes to handle the more-complicated protocol, 
 plus 5 static bytes for converting GPS time and Time Of Week to UTC, for a total of 
-**57 bytes**.
+**56 bytes**.
 
 Examples
 ======
@@ -80,7 +81,8 @@ Several programs are provided to demonstrate how to use the classes in these dif
 * [CosaNMEAGPS](CosaNMEAGPS.ino) - sync, polled, not fused, standard NMEA only
 * [CosaGPSDevice](CosaGPSDevice.ino) - async, polled, fused, standard NMEA only
 * [CosaGPSEvent](CosaGPSEvent.ino) - async, event, fused, standard NMEA only
-* [CosaUBXGPS](CosaUBXGPS.ino) - sync, polled, fused, standard NMEA + ublox proprietary NMEA + ublox protocol
+* [CosaUBXNMEA](CosaUBXNMEA.ino) - sync, polled, not fused, standard NMEA + ublox proprietary NMEA
+* [CosaUBXGPS](CosaUBXGPS.ino) - sync, polled, fused, ublox protocol
 
 Preprocessor symbol `USE_FLOAT` can be used to select integer or floating-point output.
 
