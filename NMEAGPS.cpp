@@ -22,17 +22,18 @@
 #include "Cosa/Trace.hh"
 
 #ifndef CR
-#define CR (13)
+#define CR ((char)13)
 #endif
 #ifndef LF
-#define LF (10)
+#define LF ((char)10)
 #endif
 
 /**
  * parseHEX(char a)
  * Parses a single character as HEX and returns byte value.
  */
-inline static uint8_t parseHEX(char a) {
+inline static uint8_t parseHEX(char a)
+{
     a |= 0x20; // make it lowercase
     if (('a' <= a) && (a <= 'f'))
         return a - 'a' + 10;
@@ -40,13 +41,19 @@ inline static uint8_t parseHEX(char a) {
         return a - '0';
 }
 
-static char toHexDigit( uint8_t val )
+/**
+ * formatHEX(char a)
+ * Formats lower nybble of value as HEX and returns character.
+ */
+static char formatHex( uint8_t val )
 {
   val &= 0x0F;
   return (val >= 10) ? ((val - 10) + 'A') : (val + '0');
 }
 
-
+/*
+ * Prepare internal members to receive data from sentence fields.
+ */
 void NMEAGPS::rxBegin()
 {
     crc = 0;
@@ -57,42 +64,23 @@ void NMEAGPS::rxBegin()
 }
 
 
+/*
+ * All fields from a sentence have been parsed.
+ */
 void NMEAGPS::rxEnd( bool ok )
 {
   rxState = NMEA_IDLE;
 
   if (ok) {
     coherent = true;
-
-    if (m_fix.status == gps_fix::STATUS_NONE)
-      m_fix.valid.as_byte = 0;
-    else if (m_fix.status == gps_fix::STATUS_TIME_ONLY) {
-#ifdef GPS_FIX_DATE
-      bool dateValid = m_fix.valid.date;
-#endif
-#ifdef GPS_FIX_TIME
-      bool timeValid = m_fix.valid.time;
-#endif
-#if defined(GPS_FIX_DATE) | defined(GPS_FIX_TIME)
-      m_fix.valid.as_byte = 0; // nothing else is valid
-#endif
-#ifdef GPS_FIX_DATE
-      m_fix.valid.date = dateValid;
-#endif
-#ifdef GPS_FIX_TIME
-      m_fix.valid.time = timeValid;
-#endif
-    }
-
-  } else {
-    m_fix.valid.as_byte = 0;
-    nmeaMessage = NMEA_UNKNOWN;
-  }
-
 #ifdef NMEAGPS_STATS
-  if (ok)
     statistics.parser_ok++;
 #endif
+
+  } else {
+    m_fix.valid.init();
+    nmeaMessage = NMEA_UNKNOWN;
+  }
 }
 
 
@@ -108,42 +96,45 @@ NMEAGPS::decode_t NMEAGPS::decode( char c )
       case NMEA_IDLE:
           res = DECODE_CHR_INVALID;
           nmeaMessage = NMEA_UNKNOWN;
-//trace << 'X' << toHexDigit(c >> 4) << toHexDigit(c);
+//trace << 'X' << formatHex(c >> 4) << formatHex(c);
           break;
 
           // Wait until complete line is received
       case NMEA_RECEIVING_DATA:
           if (c == '*') {   // Line finished, CRC follows
-              rxState = NMEA_RECEIVING_CRC1;
+              rxState = NMEA_RECEIVING_CRC;
+              chrCount = 0;
 
           } else if ((c == CR) || (c == LF)) { // Line finished, no CRC
               rxEnd( true );
               res = DECODE_COMPLETED;
 
           } else if ((c < ' ') || ('~' < c)) { // Invalid char
-              res = DECODE_CHR_INVALID;
               rxEnd( false );
+              res = DECODE_CHR_INVALID;
 
           } else {            // normal data character
-              crc ^= c;
+
+              crc ^= c;  // accumulate CRC as the chars come in...
 
               if (fieldIndex == 0) {
                 //  The first field is the sentence type.  It will be used later
-                //  by the virtual parseField
+                //  by the virtual /parseField/
                 decode_t cmd_res = parseCommand( c );
                 if (cmd_res == DECODE_COMPLETED) {
-                  m_fix.valid.as_byte = 0;
+                  m_fix.valid.init();
                   coherent = false;
                 } else if (cmd_res == DECODE_CHR_INVALID) {
                   rxEnd( false );
                 }
 
-              } else if (!parseField(c))
-//{ trace << PSTR("!pf @ ") << nmeaMessage << PSTR(":") << fieldIndex << PSTR("/") << chrCount << PSTR("'") << c << PSTR("'\n");
+              } else if (!parseField( c )) {
+//trace << PSTR("!pf @ ") << nmeaMessage << PSTR(":") << fieldIndex << PSTR("/") << chrCount << PSTR("'") << c << PSTR("'\n");
                 rxEnd( false );
-//}
+              }
 
-              if (c == ',') { // a comma marks the next field
+              if (c == ',') {
+                // Start the next field
                 fieldIndex++;
                 chrCount = 0;
               } else
@@ -152,36 +143,38 @@ NMEAGPS::decode_t NMEAGPS::decode( char c )
           break;
           
           
-          // Receiving first CRC character
-      case NMEA_RECEIVING_CRC1:
-          if (crc>>4 != parseHEX(c)) { // mismatch, count as CRC error
-#ifdef NMEAGPS_STATS
-              statistics.parser_crcerr++;
-#endif
-              rxEnd( false );
-          } else  // valid first CRC nibble
-              rxState = NMEA_RECEIVING_CRC2;
-          break;
-          
-          
-          // Receiving second CRC character, parse line if CRC matches
-      case NMEA_RECEIVING_CRC2:
-          if ((crc & 0x0F) != parseHEX(c)) {// CRCs do not match
-#ifdef NMEAGPS_STATS
-              statistics.parser_crcerr++;
-#endif
-              rxEnd( false );
-          } else { // valid second CRC nibble
+          // Receiving CRC characters
+      case NMEA_RECEIVING_CRC:
+        {
+          bool err;
+          uint8_t nybble = parseHEX( c );
+          if (chrCount == 0) {
+            chrCount++;
+            err = ((crc >> 4) != nybble);
+          } else { // == 1
+            err = ((crc & 0x0F) != nybble);
+            if (!err) {
               rxEnd( true );
               res = DECODE_COMPLETED;
+            }
           }
-          break;
+          if (err) {
+#ifdef NMEAGPS_STATS
+            statistics.parser_crcerr++;
+#endif
+            rxEnd( false );
+          }
+        }
+        break;
     }
   }
 
   return res;
 }
 
+/*
+ * Sentence strings in PROGMEM
+ */
 static const char gpgga[] __PROGMEM =  "GPGGA";
 static const char gpgll[] __PROGMEM =  "GPGLL";
 static const char gpgsa[] __PROGMEM =  "GPGSA";
@@ -210,6 +203,7 @@ const NMEAGPS::msg_table_t NMEAGPS::nmea_msg_table __PROGMEM =
     NMEAGPS::std_nmea
   };
 
+
 NMEAGPS::decode_t NMEAGPS::parseCommand( char c )
 {
 //trace << c;
@@ -223,10 +217,13 @@ NMEAGPS::decode_t NMEAGPS::parseCommand( char c )
     uint8_t  entry;
 
     if (nmeaMessage == NMEA_UNKNOWN)
+      // We're just starting
       entry = 0;
     else if ((msg_offset <= nmeaMessage) && (nmeaMessage < msg_offset+table_size))
+      // In range of this table, pick up where we left off
       entry = nmeaMessage - msg_offset;
     else
+      // Try the next table
       check_this_table = false;
 
     if (check_this_table) {
@@ -238,23 +235,28 @@ NMEAGPS::decode_t NMEAGPS::parseCommand( char c )
       for (;;) {
         char rc = pgm_read_byte( &table_i[chrCount] );
         if (c == rc) {
+          // ok so far...
           entry = i;
           res = DECODE_CHR_OK;
           break;
         }
         if ((c == ',') && (rc == 0)) {
+          // End of string and it still matches:  it's this one!
 //trace << PSTR(" -> ") << (uint8_t)entry << endl;
           res = DECODE_COMPLETED;
           break;
         }
+        // Mismatch, see if the next entry starts with the same characters.
         uint8_t next_msg = i+1;
         if (next_msg >= table_size) {
+          // No more entries in this table.
 //trace << PSTR(" -> UNK (no more entries)\n");
           break;
         }
         const char *table_next = (const char *) pgm_read_word( &table[next_msg] );
         for (uint8_t j = 0; j < chrCount; j++)
           if (pgm_read_byte( &table_i[j] ) != pgm_read_byte( &table_next[j] )) {
+            // Nope, a different start to this entry
 //trace << PSTR(" -> UNK (next entries have different start)\n");
             break;
           }
@@ -265,11 +267,15 @@ NMEAGPS::decode_t NMEAGPS::parseCommand( char c )
 
     if (res == DECODE_CHR_INVALID) {
       msgs = (const msg_table_t *) pgm_read_word( &msgs->previous );
-      if (msgs)
-//{ trace << '^'; // << hex << msgs << '=' << hex << &nmea_msg_table << ' ';
+      if (msgs) {
+//trace << '^'; // << hex << msgs << '=' << hex << &nmea_msg_table << ' ';
+        // Try the current character in the previous table
         continue;
-//}
+      } // else
+        // No more tables, chr is invalid.
+      
     } else
+      //  This entry is good so far.
       nmeaMessage = (nmea_msg_t) (entry + msg_offset);
 
     return res;
@@ -338,11 +344,11 @@ bool NMEAGPS::parseField(char chr)
         case NMEA_ZDA:
 #ifdef NMEAGPS_PARSE_ZDA
           switch (fieldIndex) {
-              CASE_TIME(1);
+            CASE_TIME(1);
 #ifdef GPS_FIX_DATE
-              case 2: parseInt( m_fix.dateTime.date , chr ); break;
-              case 3: parseInt( m_fix.dateTime.month, chr ); break;
-              case 4: m_fix.valid.date = parseInt( m_fix.dateTime.year, chr );    break;
+            case 2: parseInt( m_fix.dateTime.date , chr ); break;
+            case 3: parseInt( m_fix.dateTime.month, chr ); break;
+            case 4: m_fix.valid.date = parseInt( m_fix.dateTime.year, chr ); break;
 #endif
           }
 #endif
@@ -423,8 +429,11 @@ bool NMEAGPS::parseFix( char chr )
       m_fix.status = gps_fix::STATUS_EST;
     else
       ok = false;
-  } else if ((chrCount == 1) && (chr != ',')) {
-    ok = false;
+  } else if (chrCount == 1) {
+    if (chr == ',')
+      m_fix.valid.status = true;
+    else
+      ok = false;
   }
 
   return ok;
@@ -528,10 +537,10 @@ static void send_trailer( IOStream::Device *device, uint8_t crc )
 {
   device->putchar('*');
 
-  char hexDigit = toHexDigit( crc>>4 );
+  char hexDigit = formatHex( crc>>4 );
   device->putchar( hexDigit );
 
-  hexDigit = toHexDigit( crc );
+  hexDigit = formatHex( crc );
   device->putchar( hexDigit );
 
   device->putchar( CR );

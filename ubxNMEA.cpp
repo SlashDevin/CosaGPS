@@ -36,35 +36,7 @@ bool ubloxNMEA::parseField(char chr)
           CASE_TIME(2);
           CASE_LOC(3);
           CASE_ALT(7);
-          case 8:
-            switch (chrCount) {
-              case 0:
-                if (chr == 'N')
-                  m_fix.status = gps_fix::STATUS_NONE;
-                else if (chr == 'T')
-                  m_fix.status = gps_fix::STATUS_TIME_ONLY;
-                else if (chr == 'R')
-                  m_fix.status = gps_fix::STATUS_EST;
-                else if (chr == 'G')
-                  m_fix.status = gps_fix::STATUS_STD;
-                else if (chr == 'D')
-                  m_fix.status = gps_fix::STATUS_DGPS;
-                else ok = false;
-                break;
-              case 1:
-                if (((chr == 'T') && (m_fix.status == gps_fix::STATUS_TIME_ONLY)) ||
-                    ((chr == 'K') && (m_fix.status == gps_fix::STATUS_EST)) ||
-                    (((chr == '2') || (chr == '3')) &&
-                     ((m_fix.status == gps_fix::STATUS_STD) || (m_fix.status == gps_fix::STATUS_DGPS))) ||
-                    ((chr == 'F') && (m_fix.status == gps_fix::STATUS_NONE)))
-                  ;
-                else if ((chr == 'R') && (m_fix.status == gps_fix::STATUS_DGPS))
-                  m_fix.status = gps_fix::STATUS_EST;
-                else
-                  ok = false;
-                break;
-            }
-            break;
+          case 8: ok = parseFix( chr ); break;
           CASE_SPEED(11); // kph!
           CASE_HEADING(12);
           CASE_HDOP(15);
@@ -78,21 +50,6 @@ bool ubloxNMEA::parseField(char chr)
       switch (fieldIndex) {
           CASE_TIME(2);
           CASE_DATE(3);
-#if defined(GPS_FIX_DATE) | defined(GPS_FIX_TIME)
-          case 4:
-            if (chrCount == 0) {
-              bool someDT = false;
-#if defined(GPS_FIX_DATE)
-              someDT |= m_fix.valid.date;
-#endif
-#if defined(GPS_FIX_TIME)
-              someDT |= m_fix.valid.time;
-#endif
-              if (someDT && (m_fix.status == gps_fix::STATUS_NONE))
-                m_fix.status = gps_fix::STATUS_TIME_ONLY;
-            }
-            break;
-#endif
       }
 #endif
       break;
@@ -102,5 +59,48 @@ bool ubloxNMEA::parseField(char chr)
       return NMEAGPS::parseField(chr);
   }
 
+  return ok;
+}
+
+bool ubloxNMEA::parseFix( char chr )
+{
+  bool ok = true;
+
+  switch (chrCount) {
+    case 0:
+      if (chr == 'N')
+        m_fix.status = gps_fix::STATUS_NONE;
+      else if (chr == 'T')
+        m_fix.status = gps_fix::STATUS_TIME_ONLY;
+      else if (chr == 'R')
+        m_fix.status = gps_fix::STATUS_EST;
+      else if (chr == 'G')
+        m_fix.status = gps_fix::STATUS_STD;
+      else if (chr == 'D')
+        m_fix.status = gps_fix::STATUS_DGPS;
+      else ok = false;
+      break;
+
+    case 1:
+      if (((chr == 'T') && (m_fix.status == gps_fix::STATUS_TIME_ONLY)) ||
+          ((chr == 'K') && (m_fix.status == gps_fix::STATUS_EST)) ||
+          (((chr == '2') || (chr == '3')) &&
+           ((m_fix.status == gps_fix::STATUS_STD) || (m_fix.status == gps_fix::STATUS_DGPS))) ||
+          ((chr == 'F') && (m_fix.status == gps_fix::STATUS_NONE)))
+        ; // status based on first char was ok guess
+      else if ((chr == 'R') && (m_fix.status == gps_fix::STATUS_DGPS))
+        m_fix.status = gps_fix::STATUS_EST; // oops, was DR instead
+      else
+        ok = false;
+      break;
+  
+    default:
+      if (chr == ',')
+        m_fix.valid.status = true;
+      else
+        ok = false;
+      break;
+  }
+  
   return ok;
 }

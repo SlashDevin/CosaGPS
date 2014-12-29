@@ -1,8 +1,41 @@
 #ifndef GPSFIX_H
 #define GPSFIX_H
 
+/**
+ * @file GPSfix.h
+ * @version 2.1
+ *
+ * @section License
+ * Copyright (C) 2014, SlashDevin
+ *
+ * This library is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 2.1 of the License, or (at your option) any later version.
+ *
+ * This library is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
+ */
+
 // Include core libraries
 #include "Cosa/Time.hh"
+
+/**
+ * Enable/disable the storage for the members of a fix.
+ *
+ * Disabling a member prevents it from being parsed from a received message.
+ * The disabled member cannot be accessed or stored, and its validity flag 
+ * would not be available.  It will not be declared, and code that uses that
+ * member will not compile.
+ *
+ * DATE and TIME are somewhat coupled in that they share a single `time_t`,
+ * but they have separate validity flags.
+ *
+ * See also note regarding the HDOP member, below.
+ *
+ */
 
 #define GPS_FIX_DATE
 #define GPS_FIX_TIME
@@ -12,6 +45,21 @@
 #define GPS_FIX_HEADING
 #define GPS_FIX_SATELLITES
 //#define GPS_FIX_HDOP
+
+/**
+ * A structure for holding a GPS fix: time, position, velocity, etc.
+ *
+ * Because GPS devices report various subsets of a coherent fix, 
+ * this class tracks which members of the fix are being reported: 
+ * each part has its own validity flag. Also, operator |= implements 
+ * merging multiple reports into one consolidated report.
+ *
+ * @section Limitations
+ * Reports are not really fused with an algorithm; if present in 
+ * the source and the status != NONE, they are simply replaced in 
+ * the destination.
+ *
+ */
 
 class gps_fix {
 public:
@@ -24,6 +72,8 @@ public:
    * significant digits than a 16-bit number.  The decimal point is
    * used as a field separator for these two parts.  This is more efficient
    * than calling the 32-bit math subroutines on a single scaled long integer.
+   * This requires knowing the exponent on the fraction when a simple type
+   * (e.g., float or int) is needed.
    */
 
   struct whole_frac {
@@ -37,10 +87,6 @@ public:
     double double_00() const { return ((double)whole) + ((double)frac)*0.01; };
     float float_000() const { return ((float)whole) + ((float)frac)*0.001; };
   } __attribute__((packed));
-
-  /**
-   * A structure for holding a GPS fix: time, position, velocity.
-   */
 
 #ifdef GPS_FIX_LOCATION
     int32_t       lat;  // degrees * 1e7, negative is South
@@ -82,7 +128,7 @@ public:
    * Horizontal Dilution of Precision.  This is a measure of the current satellite
    * constellation geometry WRT how 'good' it is for determining a position.  This
    * is _independent_ of signal strength and many other factors that may be
-   * internal to the receiver.  It cannot be used to determine position accuracy
+   * internal to the receiver.  It _cannot_ be used to determine position accuracy
    * in meters.
    */
   uint16_t           hdop; // x 1000
@@ -103,59 +149,77 @@ public:
    * Both fields are mapped onto this enumerated type.  Be aware that
    * different manufacturers interpret them differently.  This can cause 
    * problems in sentences which include both types (e.g., GPGLL).
+   *
+   * Note: Sorted by increasing accuracy.  See also /operator |=/.
    */
    
   enum status_t {
     STATUS_NONE,
+    STATUS_EST,
     STATUS_TIME_ONLY,
     STATUS_STD,
-    STATUS_DGPS,
-    STATUS_EST
+    STATUS_DGPS
   };
 
   status_t  status:8;
 
   //  Flags to indicate which members of this fix are valid.
 
-  union valid_t {
-    uint8_t as_byte;
-    struct {
+  struct valid_t {
+    bool status:1;
 
 #if defined(GPS_FIX_DATE)
-      bool date:1;
+    bool date:1;
 #endif
 
 #if defined(GPS_FIX_TIME)
-      bool time:1;
+    bool time:1;
 #endif
 
 #ifdef GPS_FIX_LOCATION
-      bool location:1;
+    bool location:1;
 #endif
 
 #ifdef GPS_FIX_ALTITUDE
-      bool altitude:1;
+    bool altitude:1;
 #endif
 
 #ifdef GPS_FIX_SPEED
-      bool speed:1;
+    bool speed:1;
 #endif
 
 #ifdef GPS_FIX_HEADING
-      bool heading:1;
+    bool heading:1;
 #endif
 
 #ifdef GPS_FIX_SATELLITES
-      bool satellites:1;
+    bool satellites:1;
 #endif
 
 #ifdef GPS_FIX_HDOP
-      bool hdop:1;
+    bool hdop:1;
 #endif
-    } __attribute__((packed));
+
+    void init()
+      {
+        uint8_t *all = (uint8_t *) this;
+        for (uint8_t i=0; i<sizeof(*this); i++)
+          *all++ = 0;
+      }
+
+    void operator |=( const valid_t & r )
+      {
+        uint8_t *all = (uint8_t *) this;
+        const uint8_t *r_all = (const uint8_t *) &r;
+        for (uint8_t i=0; i<sizeof(*this); i++)
+          *all++ |= *r_all++;
+      }
   } __attribute__((packed))
       valid;
 
+  /*
+   *  Initialize a fix.  All configured members are set to zero.
+   */
   void init()
   {
 #ifdef GPS_FIX_LOCATION
@@ -184,70 +248,70 @@ public:
     hdop = 0;
 #endif
 
-    valid.as_byte = 0;
+    valid.init();
   };
 
     /**
-     * Merge valid fields from the right fix into
-     *  a "fused" fix on the left (i.e., /this/).
+     * Merge valid fields from the right fix into a "fused" fix 
+     * on the left (i.e., /this/).
      */
 
     gps_fix & operator |=( const gps_fix & r )
     {
-      if (r.status != STATUS_NONE) {
+      // Replace /status/  only if the right is more "accurate".
+      if (r.valid.status && (!valid.status || (status < r.status)))
         status = r.status;
 
 #ifdef GPS_FIX_DATE
-        if (r.valid.date) {
-          dateTime.date  = r.dateTime.date;
-          dateTime.month = r.dateTime.month;
-          dateTime.year  = r.dateTime.year;
-        }
+      if (r.valid.date) {
+        dateTime.date  = r.dateTime.date;
+        dateTime.month = r.dateTime.month;
+        dateTime.year  = r.dateTime.year;
+      }
 #endif
 
 #ifdef GPS_FIX_TIME
-        if (r.valid.time) {
-          dateTime.hours = r.dateTime.hours;
-          dateTime.minutes = r.dateTime.minutes;
-          dateTime.seconds = r.dateTime.seconds;
-          dateTime_cs      = r.dateTime_cs;
-        }
+      if (r.valid.time) {
+        dateTime.hours = r.dateTime.hours;
+        dateTime.minutes = r.dateTime.minutes;
+        dateTime.seconds = r.dateTime.seconds;
+        dateTime_cs      = r.dateTime_cs;
+      }
 #endif
 
 #ifdef GPS_FIX_LOCATION
-        if (r.valid.location) {
-          lat = r.lat;
-          lon = r.lon;
-        }
+      if (r.valid.location) {
+        lat = r.lat;
+        lon = r.lon;
+      }
 #endif
 
 #ifdef GPS_FIX_ALTITUDE
-        if (r.valid.altitude)
-          alt = r.alt;
+      if (r.valid.altitude)
+        alt = r.alt;
 #endif
 
 #ifdef GPS_FIX_HEADING
-        if (r.valid.heading)
-          hdg = r.hdg;
+      if (r.valid.heading)
+        hdg = r.hdg;
 #endif
 
 #ifdef GPS_FIX_SPEED
-        if (r.valid.speed)
-          spd = r.spd;
+      if (r.valid.speed)
+        spd = r.spd;
 #endif
 
 #ifdef GPS_FIX_SATELLITES
-        if (r.valid.satellites)
-          satellites = r.satellites;
+      if (r.valid.satellites)
+        satellites = r.satellites;
 #endif
 
 #ifdef GPS_FIX_HDOP
-        if (r.valid.hdop)
-          hdop = r.hdop;
+      if (r.valid.hdop)
+        hdop = r.hdop;
 #endif
 
-        valid.as_byte |= r.valid.as_byte;
-      }
+      valid |= r.valid;
 
       return *this;
     }

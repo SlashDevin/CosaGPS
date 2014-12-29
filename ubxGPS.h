@@ -252,6 +252,8 @@ private:
 
     IOStream::Device *m_device;
 
+    bool parseFix( uint8_t c );
+
 #if defined(GPS_FIX_TIME) & defined(GPS_FIX_DATE)
     bool parseTOW( uint8_t chr )
     {

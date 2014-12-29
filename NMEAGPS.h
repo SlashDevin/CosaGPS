@@ -19,14 +19,6 @@
  * Lesser General Public License for more details.
  */
 
-/**
- * NMEA 0183 Parser for generic GPS Modules.
- *
- * @section Limitations
- * Very limited support for NMEA messages.
- * Only NMEA messages of types GGA, GLL, RMC, VTG, ZDA are parsed.
- */
-
 #include <avr/pgmspace.h>
 
 #include "GPSfix.h"
@@ -53,7 +45,7 @@
 
 /**
  * Configuration item for allowing derived types of NMEAGPS.
- * If defined, virtuals are used, with a slight size and time penalty.
+ * If defined, virtuals are used, with a slight size (2 bytes) and time penalty.
  * If you derive classes from NMEAGPS, you *must* define NMEAGPS_DERIVED_TYPES.
  */
  
@@ -64,12 +56,26 @@
 #define NMEAGPS_VIRTUAL
 #endif
 
+/**
+ *
+ * NMEA 0183 Parser for generic GPS Modules.  As bytes are received from
+ * the device, they affect the internal FSM and set various members
+ * of the current /fix/.
+ *
+ * @section Limitations
+ * 1) Only NMEA messages of types GGA, GLL, RMC, VTG, ZDA are parsed.
+ * 2) The current `fix` is only coherent _after_ the complete message is 
+ * parsed and _before_ the next message begins to affect the members. 
+ * /is_coherent()/ should be checked before accessing any members of /fix/.
+ *
+ **/
+
 class NMEAGPS
 {
     NMEAGPS( const NMEAGPS & );
 
 public:
-    /** NMEA message types. */
+    /** NMEA standard message types. */
     enum nmea_msg_t {
         NMEA_UNKNOWN,
         NMEA_GGA,
@@ -85,28 +91,30 @@ public:
 
 protected:
     //  Current fix
-    struct gps_fix m_fix;
+    gps_fix m_fix;
 
     /**
      * Current parser state
      */
-    uint8_t         crc;
-    uint8_t         fieldIndex;
-    uint8_t         chrCount;  // index of current character in current field
-    uint8_t         decimal; // digits after the decimal point
+    uint8_t         crc;        // accumulated CRC in the sentence
+    uint8_t         fieldIndex; // index of current field in the sentence
+    uint8_t         chrCount;   // index of current character in current field
+    uint8_t         decimal;    // digits received after the decimal point
     struct {
-      bool            negative:1;
-      bool            coherent:1;
+      bool            negative:1; // field had a leading '-'
+      bool            coherent:1; // fix is coherent
     } __attribute__((packed));
 
+    /*
+     * Internal FSM states
+     */
     enum rxState_t {
-        NMEA_IDLE,
-        NMEA_RECEIVING_DATA,
-        NMEA_RECEIVING_CRC1,
-        NMEA_RECEIVING_CRC2
+        NMEA_IDLE,           // Waiting for initial '$'
+        NMEA_RECEIVING_DATA, // Parsing fields up to the terminating '*'
+        NMEA_RECEIVING_CRC   // Receiving two-byte transmitted CRC
     };
     static const uint8_t NMEA_FIRST_STATE = NMEA_IDLE;
-    static const uint8_t NMEA_LAST_STATE  = NMEA_RECEIVING_CRC2;
+    static const uint8_t NMEA_LAST_STATE  = NMEA_RECEIVING_CRC;
 
     rxState_t rxState:8;
 
@@ -121,21 +129,20 @@ public:
       coherent = true;
     };
 
-    enum decode_t { DECODE_CHR_INVALID, DECODE_CHR_OK, DECODE_COMPLETED };
-
     /**
      * Process one character of an NMEA GPS sentence.  The  internal state machine
      * tracks what part of the sentence has been received so far.  As the
      * sentence is received, members of the /fix/ structure are updated.  
      * @return true when new /fix/ data is available and coherent.
      */
+    enum decode_t { DECODE_CHR_INVALID, DECODE_CHR_OK, DECODE_COMPLETED };
+
     NMEAGPS_VIRTUAL decode_t decode( char c );
 
     /**
      * Most recent NMEA sentence type received.
      */
     enum nmea_msg_t nmeaMessage:8;
-
     
     //  Current fix accessor.
     //  /fix/ will be constantly changing as characters are received.
@@ -158,7 +165,7 @@ public:
 
     bool is_coherent() const { return coherent; }
 
-    //  Notes regarding the volatile /fix/:
+    //  Notes regarding a volatile /fix/:
     //
     //  If an NMEAGPS instance is fed characters from a non-interrupt
     //  context, the following method is safe:
@@ -166,9 +173,10 @@ public:
     //  void loop()
     //  {
     //    while (uart.available()) {
-    //      if (gps.decode( uart.getchar() )) {
-    //        // Got something new!
-    //        // Access only valid members and/or save a snapshot for later
+    //      if (gps.decode( uart.getchar() ) == DECODE_COMPLETED) {
+    //        // Got something new!  Access only valid members here and/or...
+    //
+    //        // ...save a snapshot for later
     //        safe_fix = gps.fix();
     //      }
     //    }
@@ -238,14 +246,15 @@ protected:
     NMEAGPS_VIRTUAL bool parseField( char chr );
 
     /*
-     *  Helper macro for conditionally parsing a field.
+     *  Helper macro for parsing a field in a message field switch statement.
      */
 #define PARSE_FIELD(i,f) case i: return parse##f( chr );
 
     /*
-     * Conditional macros for parsing the primary field types.
+     * Macros for parsing the primary field types into /fix/ members.
      */
-     
+
+    // Optional TIME    -----------------------
 #ifdef GPS_FIX_TIME
 #define CASE_TIME(i) PARSE_FIELD(i,Time)
     bool parseTime( char chr );
@@ -253,6 +262,7 @@ protected:
 #define CASE_TIME(i)
 #endif
 
+    // Optional DATE    -----------------------
 #ifdef GPS_FIX_DATE
 #define CASE_DATE(i) PARSE_FIELD(i,DDMMYY)
     bool parseDDMMYY( char chr );
@@ -260,9 +270,11 @@ protected:
 #define CASE_DATE(i)
 #endif
 
+    // Required STATUS    -----------------------
 #define CASE_FIX(i) PARSE_FIELD(i,Fix)
     bool parseFix( char chr );
 
+    // Optional LOCATION    -----------------------
 #ifdef GPS_FIX_LOCATION
 #define CASE_LOC(i) PARSE_FIELD(i,Lat) \
 PARSE_FIELD(i+1,NS); \
@@ -299,6 +311,7 @@ PARSE_FIELD(i+3,EW);
 #define CASE_LOC(i)
 #endif
 
+    // Optional SPEED    -----------------------
 #ifdef GPS_FIX_SPEED
 #define CASE_SPEED(i) PARSE_FIELD(i,Speed)
 
@@ -310,6 +323,7 @@ PARSE_FIELD(i+3,EW);
 #define CASE_SPEED(i)
 #endif
 
+    // Optional HEADING    -----------------------
 #ifdef GPS_FIX_HEADING
 #define CASE_HEADING(i) PARSE_FIELD(i,Heading)
 
@@ -321,6 +335,7 @@ PARSE_FIELD(i+3,EW);
 #define CASE_HEADING(i)
 #endif
 
+    // Optional ALTITUDE    -----------------------
 #ifdef GPS_FIX_ALTITUDE
 #define CASE_ALT(i) PARSE_FIELD(i,Alt)
 
@@ -332,6 +347,7 @@ PARSE_FIELD(i+3,EW);
 #define CASE_ALT(i)
 #endif
 
+    // Optional number of SATELLITES    -----------------------
 #ifdef GPS_FIX_SATELLITES
 #define CASE_SAT(i) PARSE_FIELD(i,Satellites)
 
@@ -344,6 +360,7 @@ PARSE_FIELD(i+3,EW);
 #define CASE_SAT(i)
 #endif
 
+    // Optional Horizontal Dilution of Precision    -----------------------
 #ifdef GPS_FIX_HDOP
 #define CASE_HDOP(i) PARSE_FIELD(i,HDOP)
 
@@ -367,8 +384,10 @@ PARSE_FIELD(i+3,EW);
 #define CASE_HDOP(i)
 #endif
 
+    // Helper method for parsing floating-point numbers into a /whole_frac/
     bool parseFloat( gps_fix::whole_frac & val, char chr, uint8_t max_decimal );
 
+    // Helper method for parsing integers
     bool parseInt( uint8_t &val, uint8_t chr )
     {
       bool is_comma = (chr == ',');

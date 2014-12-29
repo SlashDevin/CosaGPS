@@ -18,26 +18,6 @@ bool ubloxGPS::rxEnd()
 {
   coherent = true;
 
-  if (m_fix.status == gps_fix::STATUS_NONE)
-    m_fix.valid.as_byte = 0;
-  else if (m_fix.status == gps_fix::STATUS_TIME_ONLY) {
-#ifdef GPS_FIX_DATE
-    bool dateValid = m_fix.valid.date;
-#endif
-#ifdef GPS_FIX_TIME
-    bool timeValid = m_fix.valid.time;
-#endif
-#if defined(GPS_FIX_DATE) | defined(GPS_FIX_TIME)
-    m_fix.valid.as_byte = 0; // nothing else is valid
-#endif
-#ifdef GPS_FIX_DATE
-    m_fix.valid.date = dateValid;
-#endif
-#ifdef GPS_FIX_TIME
-    m_fix.valid.time = timeValid;
-#endif
-  }
-
   bool visible_msg = false;
 
   if (rx().msg_class == UBX_ACK) {
@@ -130,8 +110,10 @@ ubloxGPS::decode_t ubloxGPS::decode( char c )
               rx().length += chr << 8;
               chrCount = 0;
               rxState = (rxState_t) UBX_RECEIVING_DATA;
-              m_fix.valid.as_byte = 0;
+              
+              m_fix.valid.init();
               coherent = false;
+              
               if (rx().msg_class == UBX_ACK) {
                 if (ack_expected)
                   ack_same_as_sent = true; // so far...
@@ -363,7 +345,7 @@ bool ubloxGPS::parseField(char chr)
                 break;
 #endif
               case 4:
-                m_fix.status = (gps_fix::status_t) chr;
+                ok = parseFix( chr );
                 break;
               case 5:
                 {
@@ -587,6 +569,28 @@ bool ubloxGPS::parseField(char chr)
     }
 
     return ok;
+}
+
+
+bool ubloxGPS::parseFix( uint8_t c )
+{
+  static const gps_fix::status_t ubx[] __PROGMEM =
+    {
+      gps_fix::STATUS_NONE,
+      gps_fix::STATUS_EST,   // dead reckoning only
+      gps_fix::STATUS_STD,   // 2D
+      gps_fix::STATUS_STD,   // 3D
+      gps_fix::STATUS_STD,   // GPS + dead reckoning
+      gps_fix::STATUS_TIME_ONLY
+    };
+
+  if (c >= membersof(ubx))
+    return false;
+
+  m_fix.status = (gps_fix::status_t) pgm_read_byte( &ubx[c] );
+  m_fix.valid.status = true;
+
+  return true;
 }
 
 #if 0

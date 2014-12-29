@@ -194,6 +194,10 @@ public:
 
     void traceIt()
     {
+      if (merged.valid.status)
+        trace << merged.status;
+      trace << ',';
+
 #if defined(GPS_FIX_DATE) | defined(GPS_FIX_TIME)
       bool someTime = false;
 #if defined(GPS_FIX_DATE)
@@ -310,8 +314,9 @@ void setup()
   uart.begin(9600);
   trace.begin(&uart, PSTR("CosaUBXGPS: started"));
   trace << PSTR("fix object size = ") << sizeof(gps.fix()) << endl;
+  trace << PSTR("NMEAGPS object size = ") << sizeof(NMEAGPS) << endl;
   trace << PSTR("ubloxGPS object size = ") << sizeof(ubloxGPS) << endl;
-  trace << PSTR("gps object size = ") << sizeof(gps) << endl;
+  trace << PSTR("MyGPS object size = ") << sizeof(gps) << endl;
   uart.flush();
 
   // Start the UART for the GPS device

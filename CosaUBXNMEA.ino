@@ -29,6 +29,10 @@ static void poll()
 
 static void sentenceReceived()
 {
+  if (gps.fix().valid.status)
+    trace << gps.fix().status;
+  trace << ',';
+
 #if defined(GPS_FIX_DATE) | defined(GPS_FIX_TIME)
   bool someTime = false;
 #if defined(GPS_FIX_DATE)
@@ -48,67 +52,67 @@ static void sentenceReceived()
   static clock_t now = 0L;
   trace << now++;
 #endif
-  trace << PSTR(",");
-
+  trace << ',';
+  
 #ifdef USE_FLOAT
   trace.width(3);
   trace.precision(6);
 #ifdef GPS_FIX_LOCATION
   if (gps.fix().valid.location)
-    trace << gps.fix().latitude() << PSTR(",") << gps.fix().longitude();
+    trace << gps.fix().latitude() << ',' << gps.fix().longitude();
   else
-    trace << PSTR(",");
-  trace << PSTR(",");
+    trace << ',';
+  trace << ',';
 #endif
 #ifdef GPS_FIX_HEADING
   trace.precision(2);
   if (gps.fix().valid.heading)
     trace << gps.fix().heading();
-  trace << PSTR(",");
+  trace << ',';
 #endif
 #ifdef GPS_FIX_SPEED
   trace.precision(3);
   if (gps.fix().valid.speed)
     trace << gps.fix().speed();
-  trace << PSTR(",");
+  trace << ',';
 #endif
 #ifdef GPS_FIX_ALTITUDE
   trace.precision(2);
   if (gps.fix().valid.altitude)
     trace << gps.fix().altitude();
-  trace << PSTR(",");
+  trace << ',';
 #endif
 
 #else
 
 #ifdef GPS_FIX_LOCATION
   if (gps.fix().valid.location)
-    trace << gps.fix().latitudeL() << PSTR(",") << gps.fix().longitudeL();
+    trace << gps.fix().latitudeL() << ',' << gps.fix().longitudeL();
   else
-    trace << PSTR(",");
-  trace << PSTR(",");
+    trace << ',';
+  trace << ',';
 #endif
 #ifdef GPS_FIX_HEADING
   if (gps.fix().valid.heading)
     trace << gps.fix().heading_cd();
-  trace << PSTR(",");
+  trace << ',';
 #endif
 #ifdef GPS_FIX_SPEED
   if (gps.fix().valid.speed)
     trace << gps.fix().speed_mkn();
-  trace << PSTR(",");
+  trace << ',';
 #endif
 #ifdef GPS_FIX_ALTITUDE
   if (gps.fix().valid.altitude)
     trace << gps.fix().altitude_cm();
-  trace << PSTR(",");
+  trace << ',';
 #endif
 #endif
 
 #ifdef GPS_FIX_SATELLITES
   if (gps.fix().valid.satellites)
     trace << gps.fix().satellites;
-  trace << PSTR(",");
+  trace << ',';
 #endif
 
 #ifdef USE_FLOAT
