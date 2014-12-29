@@ -1,7 +1,7 @@
 NeoGPS
 ======
 
-NeoGPS is a generic GPS parsing library for the Arduino [Cosa](https://github.com/mikaelpatel/Cosa) environment.
+NeoGPS is a generic GPS parsing library for the Arduino [Cosa](https://github.com/mikaelpatel/Cosa) environment.  (Vanilla Arduino implementation coming soon...)
 The following protocols are supported:
 * NMEA 0183
 * u-blox NEO-6
@@ -34,10 +34,10 @@ This also facilitates the merging of separately received packets into a coherent
 
 Except for `status`, each member is conditionally compiled; any, all, or *no* members can be selected for parsing, storing and fusing.  This allows configuring an application to use the minimum amount of RAM for the particular `fix` members of interest:
 
-* separate validity flag for each of those members.
+* Separate validity flag for each of those members.
 * Integers are used for all members, retaining full precision of the original data.   
 * Optional floating-point accessors are provided.
-* A `fix` operator is defined which merges two fixes:
+* An `operator |=` merges two fixes:
 ```
 NMEAGPS gps_device;
 gps_fix_t merged;
@@ -53,8 +53,8 @@ As data is received from the device, various portions of a `fix` are modified.  
 fact, _**no buffering RAM is required**_.  Each character affects the internal state machine and may 
 also contribute to a data member (e.g., latitude).
 
-A fully-configured `fix` requires only 32 bytes, and the NMEA state machine requires 
-7 bytes, for a total of **39 bytes** (add 2 more bytes if `DERIVED_NMEA_TYPES` enable virtuals).
+A fully-configured `fix` requires only 34 bytes, and the NMEA state machine requires 
+7 bytes, for a total of **43 bytes** (add 2 more bytes if `DERIVED_NMEA_TYPES` enable virtuals).  For comparison, TinyGPS required 120 bytes.
 
 The minimally-configured `fix` requires only 
 2 bytes, for a total of **10 bytes** (structure alignment may add 1 byte).
@@ -88,10 +88,10 @@ Several programs are provided to demonstrate how to use the classes in these dif
 
 Preprocessor symbol `USE_FLOAT` can be used to select integer or floating-point output.
 
-`CosaGPSTest.ino` is a self-test program.  Various strings are passed to `decode` and the expected pass or fail results are displayed.
+[CosaGPSTest.ino](CosaGPSText.ino) is a self-test program.  Various strings are passed to `decode` and the expected pass or fail results are displayed.
 
 Acknowledgements
 ==========
-Mikal Hart's [TinyGPS](https://github.com/mikalhart/TinyGPS)
+Mikal Hart's [TinyGPS](https://github.com/mikalhart/TinyGPS) for the generic `decode` approach.
 
-tht's [Cosa Device](http://forum.arduino.cc/index.php?topic=150299.msg1863220#msg1863220)
+tht's [initial implementation](http://forum.arduino.cc/index.php?topic=150299.msg1863220#msg1863220) of a Cosa `IOStream::Device`.
