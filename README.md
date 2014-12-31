@@ -85,10 +85,9 @@ Several programs are provided to demonstrate how to use the classes in these dif
 * [CosaGPSEvent](CosaGPSEvent.ino) - async, event, fused, standard NMEA only
 * [CosaUBXNMEA](CosaUBXNMEA.ino) - sync, polled, not fused, standard NMEA + ublox proprietary NMEA
 * [CosaUBXGPS](CosaUBXGPS.ino) - sync, polled, fused, ublox protocol
+* [CosaGPSTest.ino](CosaGPSText.ino) - sync, polled, not fused, standard NMEA only (This is a self-test program.  Various strings are passed to `decode` and the expected pass or fail results are displayed.  No GPS device is required.)
 
-Preprocessor symbol `USE_FLOAT` can be used to select integer or floating-point output.
-
-[CosaGPSTest.ino](CosaGPSText.ino) is a self-test program.  Various strings are passed to `decode` and the expected pass or fail results are displayed.
+Preprocessor symbol `USE_FLOAT` can be used in [GPSFix.cpp](GPSfix.cpp) to select integer or floating-point output.
 
 Acknowledgements
 ==========
