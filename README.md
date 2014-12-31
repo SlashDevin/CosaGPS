@@ -1,4 +1,4 @@
-NeoGPS
+CosaGPS
 ======
 
 This fully-configurable [Cosa](https://github.com/mikaelpatel/Cosa) library uses _**minimal**_ RAM and CPU time, 
