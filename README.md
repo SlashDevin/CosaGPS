@@ -2,7 +2,7 @@ NeoGPS
 ======
 
 This fully-configurable [Cosa](https://github.com/mikaelpatel/Cosa) library uses _**minimal**_ RAM and CPU time, 
-as few as _**10 bytes of RAM**_.  It supports the following protocols:
+requiring as few as _**10 bytes of RAM**_.  It supports the following protocols:
 * NMEA 0183
 * u-blox NEO-6
 
