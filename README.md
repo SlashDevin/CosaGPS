@@ -6,6 +6,8 @@ requiring as few as _**10 bytes of RAM**_.  It supports the following protocols:
 * NMEA 0183
 * u-blox NEO-6
 
+(The plain vanilla Arduino implementation is available [here](https://github.com/SlashDevin/NeoGPS).)
+
 Goals
 ======
 In an attempt to be reusable in a variety of different programming styles, this library supports:
@@ -18,8 +20,6 @@ In an attempt to be reusable in a variety of different programming styles, this 
 * configurable message sets, including hooks for implementing proprietary NMEA messages
 * configurable message fields
 * multiple protocols from same device
-
-(A plain vanilla Arduino implementation is coming soon...)
 
 Data Model
 ==========
@@ -87,7 +87,7 @@ Several programs are provided to demonstrate how to use the classes in these dif
 * [CosaGPSEvent](CosaGPSEvent.ino) - async, event, fused, standard NMEA only
 * [CosaUBXNMEA](CosaUBXNMEA.ino) - sync, polled, not fused, standard NMEA + ublox proprietary NMEA
 * [CosaUBXGPS](CosaUBXGPS.ino) - sync, polled, fused, ublox protocol
-* [CosaGPSTest.ino](CosaGPSText.ino) - sync, polled, not fused, standard NMEA only (This is a self-test program.  Various strings are passed to `decode` and the expected pass or fail results are displayed.  No GPS device is required.)
+* [CosaGPSTest.ino](CosaGPSTest.ino) - sync, polled, not fused, standard NMEA only (This is a self-test program.  Various strings are passed to `decode` and the expected pass or fail results are displayed.  No GPS device is required.)
 
 Preprocessor symbol `USE_FLOAT` can be used in [GPSfix.cpp](GPSfix.cpp) to select integer or floating-point output.
 
