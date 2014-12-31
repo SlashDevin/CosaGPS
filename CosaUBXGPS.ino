@@ -15,11 +15,16 @@ static IOBuffer<UART::BUFFER_MAX> obuf;
 static IOBuffer<UART::BUFFER_MAX> ibuf;
 UART uart1(1, &ibuf, &obuf);
 
+static uint32_t seconds = 0L;
+
+//--------------------------
+
 class MyGPS : public ubloxGPS
 {
 public:
 
     gps_fix merged;
+
     enum
       {
         GETTING_STATUS, 
@@ -28,6 +33,7 @@ public:
         RUNNING
       }
         state:8;
+
     bool ok_to_process;
     
     MyGPS( IOStream::Device *device ) : ubloxGPS( device )
@@ -40,19 +46,23 @@ public:
 
     void run()
     {
-      static uint16_t since = 0;
+      static uint32_t last = 0;
+      if (last == 0) last = seconds;
 
-      if (since++ >= 2048) {
-        since = 0;
+      if ((seconds - last) > 2L) {
+        last = seconds;
         trace << PSTR("RESTART!\n");
-        state = GETTING_STATUS;
-        enable_msg( ublox::UBX_NAV, ublox::UBX_NAV_STATUS );
-      }
-
-      while (uart1.available()) {
-        if (decode( uart1.getchar() ) == DECODE_COMPLETED) {
-          if (ok_to_process && processSentence())
-            since = 0;
+        if (state != GETTING_STATUS) {
+          state = GETTING_STATUS;
+          enable_msg( ublox::UBX_NAV, ublox::UBX_NAV_STATUS );
+        }
+      } else {
+        while (uart1.available()) {
+          if (decode( uart1.getchar() ) == DECODE_COMPLETED) {
+            last = seconds;
+            if (ok_to_process)
+              processSentence();
+          }
         }
       }
       
@@ -75,6 +85,10 @@ public:
         if (!ok && (rx().msg_class != ublox::UBX_UNK)) {
 //trace << PSTR("u ") << rx().msg_class << PSTR("/") << rx().msg_id << endl;
           ok = true;
+
+          if ((rx().msg_class == ublox::UBX_NAV) &&
+              (rx().msg_id == ublox::UBX_NAV_STATUS))
+            seconds++;
         }
 
         if (ok) {
@@ -147,7 +161,7 @@ public:
               // See if we stepped into a different time interval,
               //   or if it has finally become valid after a cold start.
 
-              bool newInterval = true;
+              bool newInterval;
 #if defined(GPS_FIX_TIME)
               newInterval = (fix().valid.time &&
                             (!merged.valid.time ||
@@ -160,6 +174,13 @@ public:
                              (merged.dateTime.date  != fix().dateTime.date) ||
                              (merged.dateTime.month != fix().dateTime.month) ||
                              (merged.dateTime.year  != fix().dateTime.year)));
+#else
+              //  No date/time configured, so let's assume it's a new interval
+              //  if it has been a while since the last sentence was received.
+              static uint32_t last_sentence = 0L;
+
+              newInterval = (seconds != last_sentence);
+              last_sentence = seconds;
 #endif
 //trace << PSTR("ps mvd ") << merged.valid.date << PSTR("/") << fix().valid.date;
 //trace << PSTR(", mvt ") << merged.valid.time << PSTR("/") << fix().valid.time;
@@ -190,115 +211,16 @@ public:
 
     //--------------------------
 
-//#define USE_FLOAT
-
     void traceIt()
     {
-      if (merged.valid.status)
-        trace << merged.status;
-      trace << ',';
-
-#if defined(GPS_FIX_DATE) | defined(GPS_FIX_TIME)
-      bool someTime = false;
-#if defined(GPS_FIX_DATE)
-      someTime |= merged.valid.date;
-#endif
-#if defined(GPS_FIX_TIME)
-      someTime |= merged.valid.time;
+#if !defined(GPS_FIX_DATE) & !defined(GPS_FIX_TIME)
+      trace << seconds << ',';
 #endif
 
-      if (someTime) {
-        trace << merged.dateTime << PSTR(".");
-        if (merged.dateTime_cs < 10)
-          trace << '0';
-        trace << merged.dateTime_cs;
-      }
-#else
-      static uint16_t gps_seconds = 2;
-      trace << gps_seconds++;
-      trace << ',' << RTC::seconds();
-#endif
-      trace << ',';
-
-#ifdef USE_FLOAT
-      trace.width(3);
-      trace.precision(6);
-#ifdef GPS_FIX_LOCATION
-      if (merged.valid.location)
-        trace << merged.latitude() << ',' << merged.longitude();
-      else
-        trace << ',';
-      trace << ',';
-#endif
-#ifdef GPS_FIX_HEADING
-      trace.precision(2);
-      if (merged.valid.heading)
-        trace << merged.heading();
-      trace << ',';
-#endif
-#ifdef GPS_FIX_SPEED
-      trace.precision(3);
-      if (merged.valid.speed)
-        trace << merged.speed();
-      trace << ',';
-#endif
-#ifdef GPS_FIX_ALTITUDE
-      trace.precision(2);
-      if (merged.valid.altitude)
-        trace << merged.altitude();
-      trace << ',';
-#endif
-
-#else
-
-#ifdef GPS_FIX_LOCATION
-      if (merged.valid.location)
-        trace << merged.latitudeL() << ',' << merged.longitudeL();
-      else
-        trace << ',';
-      trace << ',';
-#endif
-#ifdef GPS_FIX_HEADING
-      if (merged.valid.heading)
-        trace << merged.heading_cd();
-      trace << ',';
-#endif
-#ifdef GPS_FIX_SPEED
-      if (merged.valid.speed)
-        trace << merged.speed_mkn();
-      trace << ',';
-#endif
-#ifdef GPS_FIX_ALTITUDE
-      if (merged.valid.altitude)
-        trace << merged.altitude_cm();
-      trace << ',';
-#endif
-#endif
-
-#ifdef GPS_FIX_SATELLITES
-      if (merged.valid.satellites)
-        trace << merged.satellites;
-      trace << ',';
-#endif
-
-#ifdef USE_FLOAT
-      trace.width(5);
-      trace.precision(3);
-#ifdef GPS_FIX_HDOP
-      if (merged.valid.hdop)
-        trace << (merged.hdop * 0.001);
-#endif
-
-#else
-
-#ifdef GPS_FIX_HDOP
-      if (merged.valid.hdop)
-        trace << merged.hdop;
-#endif
-#endif
-      trace << endl;
+      trace << merged << '\n';
 
     } // traceIt
+
 
 } __attribute__((packed));
 
@@ -314,7 +236,6 @@ void setup()
   uart.begin(9600);
   trace.begin(&uart, PSTR("CosaUBXGPS: started"));
   trace << PSTR("fix object size = ") << sizeof(gps.fix()) << endl;
-  trace << PSTR("NMEAGPS object size = ") << sizeof(NMEAGPS) << endl;
   trace << PSTR("ubloxGPS object size = ") << sizeof(ubloxGPS) << endl;
   trace << PSTR("MyGPS object size = ") << sizeof(gps) << endl;
   uart.flush();

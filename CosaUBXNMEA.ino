@@ -3,9 +3,6 @@
   uart1 should be connected to the GPS device.
 */
 
-#include "ubxNMEA.h"
-//#define USE_FLOAT
-
 #include "Cosa/Trace.hh"
 #include "Cosa/IOBuffer.hh"
 #include "Cosa/IOStream/Driver/UART.hh"
@@ -15,7 +12,30 @@ static IOBuffer<UART::BUFFER_MAX> obuf;
 static IOBuffer<UART::BUFFER_MAX> ibuf;
 UART uart1(1, &ibuf, &obuf);
 
+#include "ubxNMEA.h"
+
+#if !defined( NMEAGPS_PARSE_GGA) & !defined( NMEAGPS_PARSE_GLL) & \
+    !defined( NMEAGPS_PARSE_GSA) & !defined( NMEAGPS_PARSE_GSV) & \
+    !defined( NMEAGPS_PARSE_RMC) & !defined( NMEAGPS_PARSE_VTG) & \
+    !defined( NMEAGPS_PARSE_ZDA ) & \
+    !defined( NMEAGPS_PARSE_PUBX_00 ) & !defined( NMEAGPS_PARSE_PUBX_04 )
+
+#if defined(GPS_FIX_DATE)| defined(GPS_FIX_TIME)
+#error No NMEA sentences enabled: no fix data available for fusing.
+#else
+#warning No NMEA sentences enabled: no fix data available for fusing,\n\
+ only pulse-per-second is available.
+#endif
+
+#endif
+
+#if !defined(GPS_FIX_DATE) & !defined(GPS_FIX_TIME)
+static uint32_t seconds = 0L;
+#endif
+
 static ubloxNMEA gps;
+
+static gps_fix fused;
 
 //--------------------------
 
@@ -27,113 +47,69 @@ static void poll()
 
 //--------------------------
 
+static void traceIt()
+{
+#if !defined(GPS_FIX_DATE) & !defined(GPS_FIX_TIME)
+  //  Date/Time not enabled, just output the interval number
+  trace << seconds << ',';
+#endif
+
+  trace << fused << '\n';
+
+} // traceIt
+
+//--------------------------
+
 static void sentenceReceived()
 {
-  if (gps.fix().valid.status)
-    trace << gps.fix().status;
-  trace << ',';
+  // See if we stepped into a different time interval,
+  //   or if it has finally become valid after a cold start.
 
-#if defined(GPS_FIX_DATE) | defined(GPS_FIX_TIME)
-  bool someTime = false;
-#if defined(GPS_FIX_DATE)
-  someTime |= gps.fix().valid.date;
-#endif
+  bool newInterval;
 #if defined(GPS_FIX_TIME)
-  someTime |= gps.fix().valid.time;
-#endif
-
-  if (someTime) {
-    trace << gps.fix().dateTime << PSTR(".");
-    if (gps.fix().dateTime_cs < 10)
-      trace << '0';
-    trace << gps.fix().dateTime_cs;
-  }
+  newInterval = (gps.fix().valid.time &&
+                (!fused.valid.time ||
+                 (fused.dateTime.seconds != gps.fix().dateTime.seconds) ||
+                 (fused.dateTime.minutes != gps.fix().dateTime.minutes) ||
+                 (fused.dateTime.hours   != gps.fix().dateTime.hours)));
+#elif defined(GPS_FIX_DATE)
+  newInterval = (gps.fix().valid.date &&
+                (!fused.valid.date ||
+                 (fused.dateTime.date  != gps.fix().dateTime.date) ||
+                 (fused.dateTime.month != gps.fix().dateTime.month) ||
+                 (fused.dateTime.year  != gps.fix().dateTime.year)));
 #else
-  static clock_t now = 0L;
-  trace << now++;
-#endif
-  trace << ',';
+  //  No date/time configured, so let's assume it's a new interval
+  //  if it has been a while since the last sentence was received.
+  static uint32_t last_sentence = 0L;
   
-#ifdef USE_FLOAT
-  trace.width(3);
-  trace.precision(6);
-#ifdef GPS_FIX_LOCATION
-  if (gps.fix().valid.location)
-    trace << gps.fix().latitude() << ',' << gps.fix().longitude();
-  else
-    trace << ',';
-  trace << ',';
+  newInterval = (seconds != last_sentence);
+  last_sentence = seconds;
 #endif
-#ifdef GPS_FIX_HEADING
-  trace.precision(2);
-  if (gps.fix().valid.heading)
-    trace << gps.fix().heading();
-  trace << ',';
-#endif
-#ifdef GPS_FIX_SPEED
-  trace.precision(3);
-  if (gps.fix().valid.speed)
-    trace << gps.fix().speed();
-  trace << ',';
-#endif
-#ifdef GPS_FIX_ALTITUDE
-  trace.precision(2);
-  if (gps.fix().valid.altitude)
-    trace << gps.fix().altitude();
-  trace << ',';
-#endif
+//trace << PSTR("ps mvd ") << fused.valid.date << PSTR("/") << gps.fix().valid.date;
+//trace << PSTR(", mvt ") << fused.valid.time << PSTR("/") << gps.fix().valid.time;
+//trace << fused.dateTime << PSTR("/") << gps.fix().dateTime;
+//trace.print( F("ni = ") ); trace << newInterval << '\n';
+//trace << 'v' << gps.fix().valid.as_byte << '\n';
 
-#else
+  if (newInterval) {
 
-#ifdef GPS_FIX_LOCATION
-  if (gps.fix().valid.location)
-    trace << gps.fix().latitudeL() << ',' << gps.fix().longitudeL();
-  else
-    trace << ',';
-  trace << ',';
-#endif
-#ifdef GPS_FIX_HEADING
-  if (gps.fix().valid.heading)
-    trace << gps.fix().heading_cd();
-  trace << ',';
-#endif
-#ifdef GPS_FIX_SPEED
-  if (gps.fix().valid.speed)
-    trace << gps.fix().speed_mkn();
-  trace << ',';
-#endif
-#ifdef GPS_FIX_ALTITUDE
-  if (gps.fix().valid.altitude)
-    trace << gps.fix().altitude_cm();
-  trace << ',';
-#endif
-#endif
+    // Log the previous interval
+    traceIt();
 
-#ifdef GPS_FIX_SATELLITES
-  if (gps.fix().valid.satellites)
-    trace << gps.fix().satellites;
-  trace << ',';
-#endif
+    //  Since we're into the next time interval, we throw away
+    //     all of the previous fix and start with what we
+    //     just received.
+    fused = gps.fix();
 
-#ifdef USE_FLOAT
-  trace.width(5);
-  trace.precision(3);
-#ifdef GPS_FIX_HDOP
-  if (gps.fix().valid.hdop)
-    trace << (gps.fix().hdop * 0.001);
-#endif
-
-#else
-
-#ifdef GPS_FIX_HDOP
-  if (gps.fix().valid.hdop)
-    trace << gps.fix().hdop;
-#endif
-#endif
-
-  trace << endl;
+  } else {
+    // Accumulate all the reports in this time interval
+    fused |= gps.fix();
+  }
 
 } // sentenceReceived
+
+
 
 //--------------------------
 
@@ -155,10 +131,16 @@ void setup()
 void loop()
 {
   while (uart1.available())
-    if ((gps.decode( uart1.getchar() ) == NMEAGPS::DECODE_COMPLETED) &&
-        (gps.nmeaMessage == (NMEAGPS::nmea_msg_t) ubloxNMEA::PUBX_00)) {
+    if (gps.decode( uart1.getchar() ) == NMEAGPS::DECODE_COMPLETED) {
       sentenceReceived();
-      poll();
+
+      if (gps.nmeaMessage == (NMEAGPS::nmea_msg_t) ubloxNMEA::PUBX_00) {
+#if !defined(GPS_FIX_DATE) & !defined(GPS_FIX_TIME)
+        //  No date/time fields enabled, use received GPRMC sentence as a pulse
+        seconds++;
+#endif
+        poll();
+      }
     }
 
   Power::sleep();

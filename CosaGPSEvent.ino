@@ -18,6 +18,8 @@ class MyGPS : public IOStream::Device, public Event::Handler
 protected:
   NMEAGPS gps;
   gps_fix merged;
+  gps_fix safe_fix;
+
 
 public:
     /**
@@ -25,34 +27,6 @@ public:
      */
     MyGPS() {};
 
-    const gps_fix & fix() const { return merged; };
-
-    void on_event( uint8_t, uint16_t )
-    {
-      bool new_safe_fix = false;
-      static gps_fix safe_fix;
-
-      // This is susceptible to event processing delays; other kinds of
-      // events may delay getting to /fix/ while it is still coherent.
-
-      synchronized {
-        if (gps.is_coherent()) {
-          safe_fix = *const_cast<const gps_fix *>(&gps.fix());
-          new_safe_fix = true;
-        }
-      }
-
-      if (new_safe_fix) {
-        if (safe_fix.valid.date && safe_fix.valid.time &&
-            merged.valid.date && merged.valid.time &&
-            (merged.dateTime != safe_fix.dateTime)) {
-          traceIt();
-          merged = safe_fix;
-        } else
-          merged |= safe_fix;
-      }
-    };
-    
     /**
      * Written to by UART driver as soon as a new char is received.
      * Called inside Irq handler.
@@ -66,60 +40,94 @@ public:
 
     //--------------------------
 
-//#define USE_FLOAT
+    void sentenceReceived()
+    {
+#if !defined(GPS_FIX_DATE) & !defined(GPS_FIX_TIME)
+      // No date/time fields enabled, use received GPRMC sentence as a pulse
+      // Make sure it's enabled.
+#ifndef NMEAGPS_PARSE_RMC
+#error NMEAGPS_PARSE_RMC must be defined in NMEAGPS.h!
+#endif
+      if (gps.nmeaMessage == NMEAGPS::NMEA_RMC) {
+        seconds++;
+      }
+#endif
+
+      // See if we stepped into a different time interval,
+      //   or if it has finally become valid after a cold start.
+
+      bool newInterval;
+#if defined(GPS_FIX_TIME)
+      newInterval = (safe_fix.valid.time &&
+                    (!merged.valid.time ||
+                     (merged.dateTime.seconds != safe_fix.dateTime.seconds) ||
+                     (merged.dateTime.minutes != safe_fix.dateTime.minutes) ||
+                     (merged.dateTime.hours   != safe_fix.dateTime.hours)));
+#elif defined(GPS_FIX_DATE)
+      newInterval = (safe_fix.valid.date &&
+                    (!merged.valid.date ||
+                     (merged.dateTime.date  != safe_fix.dateTime.date) ||
+                     (merged.dateTime.month != safe_fix.dateTime.month) ||
+                     (merged.dateTime.year  != safe_fix.dateTime.year)));
+#else
+      //  No date/time configured, so let's assume it's a new interval
+      //  if it has been a while since the last sentence was received.
+      static uint32_t last_sentence = 0L;
+      
+      newInterval = (seconds != last_sentence);
+      last_sentence = seconds;
+#endif
+
+      if (newInterval) {
+
+        // Log the previous interval
+        traceIt();
+
+        //  Since we're into the next time interval, we throw away
+        //     all of the previous fix and start with what we
+        //     just received.
+        merged = safe_fix;
+
+      } else {
+        // Accumulate all the reports in this time interval
+        merged |= safe_fix;
+      }
+
+    } // sentenceReceived
+
+    //--------------------------
 
     void traceIt()
     {
-      if (fix().valid.date || fix().valid.time) {
-        time_t copy = fix().dateTime;
-        trace << copy << PSTR(".");
-        if (fix().dateTime_cs < 10)
-          trace << '0';
-        trace << fix().dateTime_cs;
-      } else {
-        //  Apparently we don't have a fix yet, ask for a ZDA (Zulu Date and Time)
-        NMEAGPS::poll( &uart1, NMEAGPS::NMEA_ZDA );
-      }
-      trace << PSTR(",");
-
-#ifdef USE_FLOAT
-      trace.width(3);
-      trace.precision(6);
-      if (fix().valid.location)
-        trace << fix().latitude() << PSTR(",") << fix().longitude();
-      else
-        trace << PSTR(",");
-      trace << PSTR(",");
-      trace.precision(2);
-      if (fix().valid.heading)
-        trace << fix().heading();
-      trace << PSTR(",");
-      trace.precision(3);
-      if (fix().valid.speed)
-        trace << fix().speed();
-      trace << PSTR(",");
-      trace.precision(2);
-      if (fix().valid.altitude)
-        trace << fix().altitude();
-#else
-      if (fix().valid.location)
-        trace << fix().latitudeL() << PSTR(",") << fix().longitudeL();
-      else
-        trace << PSTR(",");
-      trace << PSTR(",");
-      if (fix().valid.heading)
-        trace << fix().heading_cd();
-      trace << PSTR(",");
-      if (fix().valid.speed)
-        trace << fix().speed_mkn();
-      trace << PSTR(",");
-      if (fix().valid.altitude)
-        trace << fix().altitude_cm();
+#if !defined(GPS_FIX_DATE) & !defined(GPS_FIX_TIME)
+      trace << seconds << ',';
 #endif
-      trace << endl;
+
+      trace << merged <<'\n';
 
     } // traceIt
 
+    //--------------------------
+
+    void on_event( uint8_t, uint16_t )
+    {
+      bool new_safe_fix = false;
+
+      // This is susceptible to event processing delays; other kinds of
+      // events may delay getting to /fix/ while it is still coherent.
+
+      synchronized {
+        if (gps.is_coherent()) {
+          safe_fix = *const_cast<const gps_fix *>(&gps.fix());
+          new_safe_fix = true;
+        }
+      }
+
+      if (new_safe_fix)
+        sentenceReceived();
+
+    }
+    
 };
 
 static MyGPS gps;
@@ -134,7 +142,7 @@ void setup()
   // Start the normal trace output
   uart.begin(9600);
   trace.begin(&uart, PSTR("CosaGPSEvent: started"));
-  trace << PSTR("fix object size = ") << sizeof(gps.fix()) << endl;
+  trace << PSTR("fix object size = ") << sizeof(gps_fix) << endl;
   trace << PSTR("GPS object size = ") << sizeof(gps) << endl;
   uart.flush();
 

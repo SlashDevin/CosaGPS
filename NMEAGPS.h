@@ -39,7 +39,7 @@
 //#define NMEAGPS_PARSE_GLL
 //#define NMEAGPS_PARSE_GSA
 //#define NMEAGPS_PARSE_GSV
-//#define NMEAGPS_PARSE_RMC
+#define NMEAGPS_PARSE_RMC
 //#define NMEAGPS_PARSE_VTG
 //#define NMEAGPS_PARSE_ZDA
 
@@ -48,7 +48,7 @@
  * If defined, virtuals are used, with a slight size (2 bytes) and time penalty.
  * If you derive classes from NMEAGPS, you *must* define NMEAGPS_DERIVED_TYPES.
  */
- 
+
 #define NMEAGPS_DERIVED_TYPES
 #ifdef NMEAGPS_DERIVED_TYPES
 #define NMEAGPS_VIRTUAL virtual

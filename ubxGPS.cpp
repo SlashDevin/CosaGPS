@@ -306,12 +306,18 @@ bool ubloxGPS::send( const msg_t & msg, msg_t *reply_msg )
 
   if (waiting()) {
     ok = wait_for_ack();
+/*
     if (ok) {
-//if (ack_received) trace << PSTR("got an ACK\n");
-//else if (nak_received) trace << PSTR("got a NAK!\n");
-//else trace << PSTR("ok!\n");
-    }
-//else trace << PSTR("wait_for_ack failed!\n");
+      if (ack_received) {
+        trace << PSTR("ACK!\n");
+      } else if (nak_received) {
+        trace << PSTR("NAK!\n");
+      } else {
+        trace << PSTR("ok!\n");
+      }
+    } else
+      trace << PSTR("wait_for_ack failed!\n");
+*/
   }
 
   return ok;
@@ -325,8 +331,9 @@ bool ubloxGPS::send_P( const msg_t & msg, msg_t *reply_msg )
 
 //---------------------------------------------
 
-bool ubloxGPS::parseField(char chr)
+bool ubloxGPS::parseField( char c )
 {
+    uint8_t chr = c;
     bool ok = true;
 
     switch (rx().msg_class) {
@@ -448,36 +455,34 @@ bool ubloxGPS::parseField(char chr)
           case UBX_NAV_TIMEGPS:
 //if (chrCount == 0) trace << PSTR( "timegps ");
 #ifdef UBLOX_PARSE_TIMEGPS
-            if (m_fix.status > gps_fix::STATUS_NONE) {
-              switch (chrCount) {
+            switch (chrCount) {
 
 #if defined(GPS_FIX_TIME) & defined(GPS_FIX_DATE)
-                case 0: case 1: case 2: case 3:
-                  ok = parseTOW( chr );
-                  break;
-                case 10:
-                  GPSTime::leap_seconds = (int8_t) chr;
-                  break;
-                case 11:
-                  {
-                    ublox::nav_timegps_t::valid_t &v = *((ublox::nav_timegps_t::valid_t *) &chr);
-                    if (!v.leap_seconds)
-                      GPSTime::leap_seconds = 0; // oops!
+              case 0: case 1: case 2: case 3:
+                ok = parseTOW( chr );
+                break;
+              case 10:
+                GPSTime::leap_seconds = (int8_t) chr;
+                break;
+              case 11:
+                {
+                  ublox::nav_timegps_t::valid_t &v = *((ublox::nav_timegps_t::valid_t *) &chr);
+                  if (!v.leap_seconds)
+                    GPSTime::leap_seconds = 0; // oops!
 //else trace << PSTR("leap ") << GPSTime::leap_seconds << ' ';
-                    if (GPSTime::leap_seconds != 0) {
-                      if (!v.time_of_week) {
-                        m_fix.valid.date =
-                        m_fix.valid.time = false;
-                      } else if ((GPSTime::start_of_week() == 0) &&
-                                 m_fix.valid.date && m_fix.valid.time) {
-                        GPSTime::start_of_week( m_fix.dateTime );
-//trace << m_fix.dateTime << PSTR(".") << m_fix.dateTime_cs;
-                      }
+                  if (GPSTime::leap_seconds != 0) {
+                    if (!v.time_of_week) {
+                      m_fix.valid.date =
+                      m_fix.valid.time = false;
+                    } else if ((GPSTime::start_of_week() == 0) &&
+                               m_fix.valid.date && m_fix.valid.time) {
+                      GPSTime::start_of_week( m_fix.dateTime );
+//trace << m_fix.dateTime << '.' << m_fix.dateTime_cs;
                     }
                   }
-                  break;
+                }
+                break;
 #endif
-              }
             }
 #endif
             break;
@@ -486,40 +491,40 @@ bool ubloxGPS::parseField(char chr)
 //if (chrCount == 0) trace << PSTR( " timeUTC ");
 #ifdef UBLOX_PARSE_TIMEUTC
 #if defined(GPS_FIX_TIME) | defined(GPS_FIX_DATE)
-            if (m_fix.status > gps_fix::STATUS_NONE) {
-              switch (chrCount) {
+            switch (chrCount) {
 
 #if defined(GPS_FIX_DATE)
-                case 12: m_fix.dateTime.year = chr; break;
-                case 13: m_fix.dateTime.year = ((((uint16_t)chr) << 8) + m_fix.dateTime.year) % 100; break;
-                case 14: m_fix.dateTime.month = chr;                break;
-                case 15: m_fix.dateTime.date = chr;                 break;
+              case 12: m_fix.dateTime.year   = chr; break;
+              case 13: m_fix.dateTime.year   =
+                        ((((uint16_t)chr) << 8) + m_fix.dateTime.year) % 100;
+                break;
+              case 14: m_fix.dateTime.month  = chr; break;
+              case 15: m_fix.dateTime.date   = chr; break;
 #endif
 #if defined(GPS_FIX_TIME)
-                case 16: m_fix.dateTime.hours = chr;                break;
-                case 17: m_fix.dateTime.minutes = chr;              break;
-                case 18: m_fix.dateTime.seconds = chr;              break;
+              case 16: m_fix.dateTime.hours   = chr; break;
+              case 17: m_fix.dateTime.minutes = chr; break;
+              case 18: m_fix.dateTime.seconds = chr; break;
 #endif
-                case 19:
-                  {
-                    ublox::nav_timeutc_t::valid_t &v = *((ublox::nav_timeutc_t::valid_t *) &chr);
+              case 19:
+                {
+                  ublox::nav_timeutc_t::valid_t &v = *((ublox::nav_timeutc_t::valid_t *) &chr);
 #if defined(GPS_FIX_DATE)
-                    m_fix.valid.date = (v.UTC & v.time_of_week);
+                  m_fix.valid.date = (v.UTC & v.time_of_week);
 #endif
 #if defined(GPS_FIX_TIME)
-                    m_fix.valid.time = (v.UTC & v.time_of_week);
+                  m_fix.valid.time = (v.UTC & v.time_of_week);
 #endif
 #if defined(GPS_FIX_TIME) & defined(GPS_FIX_DATE)
-                    if (m_fix.valid.date &&
-                        (GPSTime::start_of_week() == 0) &&
-                        (GPSTime::leap_seconds != 0))
-                      GPSTime::start_of_week( m_fix.dateTime );
+                  if (m_fix.valid.date &&
+                      (GPSTime::start_of_week() == 0) &&
+                      (GPSTime::leap_seconds != 0))
+                    GPSTime::start_of_week( m_fix.dateTime );
 #endif
 //trace << m_fix.dateTime << PSTR(".") << m_fix.dateTime_cs;
-//trace << ' ' << v.UTC << ' ' << v.time_of_week << ' ' << start_of_week();
-                  }
-                  break;
-              }
+//trace << ' ' << v.UTC << ' ' << v.time_of_week << ' ' << GPSTime::start_of_week();
+                }
+                break;
             }
 #endif
 #endif

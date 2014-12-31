@@ -21,16 +21,6 @@
 
 #include "NMEAGPS.h"
 
-#include "Cosa/Trace.hh"
-
-/**
- * NMEA 0183 Parser for ublox Neo-6 GPS Modules.
- *
- * @section Limitations
- * Very limited support for ublox proprietary NMEA messages.
- * Only NMEA messages of types PUBX,00 and PUBX,04 are parsed.
- */
-
 /**
  * Enable/disable the parsing of specific NMEA sentences.
  *
@@ -46,6 +36,13 @@
 #error You must "#define NMEAGPS_DERIVED_TYPES" in NMEAGPS.h!
 #endif
 
+/**
+ * NMEA 0183 Parser for ublox Neo-6 GPS Modules.
+ *
+ * @section Limitations
+ * Very limited support for ublox proprietary NMEA messages.
+ * Only NMEA messages of types PUBX,00 and PUBX,04 are parsed.
+ */
 
 class ubloxNMEA : public NMEAGPS
 {
