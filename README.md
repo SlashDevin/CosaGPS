@@ -82,12 +82,12 @@ Examples
 ======
 Several programs are provided to demonstrate how to use the classes in these different styles:
 
-* [CosaNMEAGPS](CosaNMEAGPS.ino) - sync, polled, not fused, standard NMEA only
-* [CosaGPSDevice](CosaGPSDevice.ino) - async, polled, fused, standard NMEA only
-* [CosaGPSEvent](CosaGPSEvent.ino) - async, event, fused, standard NMEA only
-* [CosaUBXNMEA](CosaUBXNMEA.ino) - sync, polled, not fused, standard NMEA + ublox proprietary NMEA
-* [CosaUBXGPS](CosaUBXGPS.ino) - sync, polled, fused, ublox protocol
-* [CosaGPSTest.ino](CosaGPSTest.ino) - sync, polled, not fused, standard NMEA only (This is a self-test program.  Various strings are passed to `decode` and the expected pass or fail results are displayed.  No GPS device is required.)
+* [CosaNMEA](examples/CosaNMEA.ino) - sync, polled, not fused, standard NMEA only
+* [CosaNMEAdevice](examples/CosaNMEAdevice.ino) - async, polled, fused, standard NMEA only
+* [CosaNMEAevent](examples/CosaNMEAevent.ino) - async, event, fused, standard NMEA only
+* [CosaPUBX](examples/CosaPUBX.ino) - sync, polled, not fused, standard NMEA + ublox proprietary NMEA
+* [Cosaublox](examples/Cosaublox.ino) - sync, polled, fused, ublox protocol
+* [CosaNMEAtest.ino](examples/CosaNMEAtest.ino) - sync, polled, not fused, standard NMEA only (This is a self-test program.  Various strings are passed to `decode` and the expected pass or fail results are displayed.  No GPS device is required.)
 
 Preprocessor symbol `USE_FLOAT` can be used in [GPSfix.cpp](GPSfix.cpp) to select integer or floating-point output.
 
