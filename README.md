@@ -1,29 +1,32 @@
 NeoGPS
 ======
 
-NeoGPS is a generic GPS parsing library for the Arduino [Cosa](https://github.com/mikaelpatel/Cosa) environment.  (Vanilla Arduino implementation coming soon...)
-The following protocols are supported:
+This fully-configurable [Cosa](https://github.com/mikaelpatel/Cosa) library uses _**minimal**_ RAM and CPU time, 
+as few as _**10 bytes of RAM**_.  It supports the following protocols:
 * NMEA 0183
 * u-blox NEO-6
 
 Goals
 ======
 In an attempt to be reusable in a variety of different programming styles, this library supports:
-* sync or async operation (main loop() vs interrupt)
+* resource-constrained environments (e.g., ATTINY targets)
+* sync or async operation (main `loop()` vs interrupt processing)
 * event or polling (Event::Handler vs. fix() call)
 * fused or not fused (multiple reports into one fix)
-* additional protocols from same device
-* buffering of fixes
-* ATTINY environments with very limited RAM and program space
+* optional buffering of fixes
 * optional floating point
 * configurable message sets, including hooks for implementing proprietary NMEA messages
 * configurable message fields
+* multiple protocols from same device
+
+(A plain vanilla Arduino implementation is coming soon...)
 
 Data Model
 ==========
 Rather than holding onto individual fields, the concept of a **fix** is used to group data members of the GPS acquisition.
 This also facilitates the merging of separately received packets into a coherent position.  The members of `gps_fix` include 
 * fix status
+* date
 * time
 * latitude and longitude
 * altitude
@@ -34,10 +37,10 @@ This also facilitates the merging of separately received packets into a coherent
 
 Except for `status`, each member is conditionally compiled; any, all, or *no* members can be selected for parsing, storing and fusing.  This allows configuring an application to use the minimum amount of RAM for the particular `fix` members of interest:
 
-* Separate validity flag for each of those members.
-* Integers are used for all members, retaining full precision of the original data.   
+* Separate validity flag for each member.
+* Integers are used for all members, retaining full precision of the original data.
 * Optional floating-point accessors are provided.
-* An `operator |=` merges two fixes:
+* `operator |=` can be used to merge two fixes:
 ```
 NMEAGPS gps_device;
 gps_fix_t merged;
@@ -54,10 +57,9 @@ fact, _**no buffering RAM is required**_.  Each character affects the internal s
 also contribute to a data member (e.g., latitude).
 
 A fully-configured `fix` requires only 34 bytes, and the NMEA state machine requires 
-7 bytes, for a total of **43 bytes** (add 2 more bytes if `DERIVED_NMEA_TYPES` enable virtuals).  For comparison, TinyGPS required 120 bytes.
+7 bytes, for a total of **43 bytes** (add 2 more bytes if `DERIVED_NMEA_TYPES` enable virtuals).  For comparison, TinyGPS requires 120 bytes.
 
-The minimally-configured `fix` requires only 
-2 bytes, for a total of **10 bytes** (structure alignment may add 1 byte).
+The minimally-configured `fix` requires only 2 bytes, for a total of **10 bytes** (structure alignment may add 1 byte).
 
 For example, if your application only requires an accurate one pulse-per-second, you 
 can configure it to parse *no* sentence types and retain *no* data members.  Although the 
@@ -87,7 +89,7 @@ Several programs are provided to demonstrate how to use the classes in these dif
 * [CosaUBXGPS](CosaUBXGPS.ino) - sync, polled, fused, ublox protocol
 * [CosaGPSTest.ino](CosaGPSText.ino) - sync, polled, not fused, standard NMEA only (This is a self-test program.  Various strings are passed to `decode` and the expected pass or fail results are displayed.  No GPS device is required.)
 
-Preprocessor symbol `USE_FLOAT` can be used in [GPSFix.cpp](GPSfix.cpp) to select integer or floating-point output.
+Preprocessor symbol `USE_FLOAT` can be used in [GPSfix.cpp](GPSfix.cpp) to select integer or floating-point output.
 
 Acknowledgements
 ==========
