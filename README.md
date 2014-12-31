@@ -6,7 +6,7 @@ requiring as few as _**10 bytes of RAM**_.  It supports the following protocols:
 * NMEA 0183
 * u-blox NEO-6
 
-(The plain vanilla Arduino implementation is available [here](https://github.com/SlashDevin/NeoGPS).)
+(The plain vanilla Arduino implementation is available [here](https://github.com/SlashDevin/CosaGPS).)
 
 Goals
 ======
