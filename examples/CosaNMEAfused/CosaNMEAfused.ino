@@ -12,38 +12,15 @@ static IOBuffer<UART::BUFFER_MAX> obuf;
 static IOBuffer<UART::BUFFER_MAX> ibuf;
 UART uart1(1, &ibuf, &obuf);
 
-#include "ubxNMEA.h"
-
-#if !defined( NMEAGPS_PARSE_GGA) & !defined( NMEAGPS_PARSE_GLL) & \
-    !defined( NMEAGPS_PARSE_GSA) & !defined( NMEAGPS_PARSE_GSV) & \
-    !defined( NMEAGPS_PARSE_RMC) & !defined( NMEAGPS_PARSE_VTG) & \
-    !defined( NMEAGPS_PARSE_ZDA ) & \
-    !defined( NMEAGPS_PARSE_PUBX_00 ) & !defined( NMEAGPS_PARSE_PUBX_04 )
-
-#if defined(GPS_FIX_DATE)| defined(GPS_FIX_TIME)
-#error No NMEA sentences enabled: no fix data available for fusing.
-#else
-#warning No NMEA sentences enabled: no fix data available for fusing,\n\
- only pulse-per-second is available.
-#endif
-
-#endif
+#include "NMEAGPS.h"
 
 #if !defined(GPS_FIX_DATE) & !defined(GPS_FIX_TIME)
 static uint32_t seconds = 0L;
 #endif
 
-static ubloxNMEA gps;
+static NMEAGPS gps;
 
 static gps_fix fused;
-
-//--------------------------
-
-static void poll()
-{
-  gps.send( &uart1, PSTR("PUBX,00") );
-  gps.send( &uart1, PSTR("PUBX,04") );
-}
 
 //--------------------------
 
@@ -122,6 +99,8 @@ static void sentenceReceived()
     //     just received.
     fused = gps.fix();
 
+    gps.poll( &uart1, NMEAGPS::NMEA_GST );
+
   } else {
     // Accumulate all the reports in this time interval
     fused |= gps.fix();
@@ -129,21 +108,20 @@ static void sentenceReceived()
 
 } // sentenceReceived
 
-
-
 //--------------------------
 
 void setup()
 {
   // Start the normal trace output
   uart.begin(9600);
-  trace.begin(&uart, PSTR("CosaUBXNMEA: started"));
+  trace.begin(&uart, PSTR("CosaNMEAfused: started"));
   trace << PSTR("fix object size = ") << sizeof(gps.fix()) << endl;
   trace << PSTR("gps object size = ") << sizeof(gps) << endl;
   
   // Start the UART for the GPS device
   uart1.begin(9600);
-  poll();
+  
+  gps.poll( &uart1, NMEAGPS::NMEA_GST );
 }
 
 //--------------------------
@@ -152,20 +130,21 @@ void loop()
 {
   while (uart1.available())
     if (gps.decode( uart1.getchar() ) == NMEAGPS::DECODE_COMPLETED) {
+//      trace << (uint8_t) gps.nmeaMessage << ' ';
+
       sentenceReceived();
 
-// Make sure that the only sentence we care about is enabled
-#ifndef NMEAGPS_PARSE_PUBX_00
-#error NMEAGPS_PARSE_PUBX_00 must be defined in ubxNMEA.h!
-#endif
-
-      if (gps.nmeaMessage == (NMEAGPS::nmea_msg_t) ubloxNMEA::PUBX_00) {
 #if !defined(GPS_FIX_DATE) & !defined(GPS_FIX_TIME)
+
+// Make sure that the only sentence we care about is enabled
+#ifndef NMEAGPS_PARSE_RMC
+#error NMEAGPS_PARSE_RMC must be defined in NMEAGPS.h!
+#endif
+      if (gps.nmeaMessage == NMEAGPS::NMEA_RMC)
         //  No date/time fields enabled, use received GPRMC sentence as a pulse
         seconds++;
 #endif
-        poll();
-      }
+
     }
 
   Power::sleep();
