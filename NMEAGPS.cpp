@@ -384,18 +384,32 @@ bool NMEAGPS::parseField(char chr)
         case NMEA_GSV:
 #ifdef NMEAGPS_PARSE_GSV
           switch (fieldIndex) {
-              CASE_SV_MSG_NO(2);
               CASE_SAT(3);
 #ifdef NMEAGPS_PARSE_SATELLITES
               case 1: break; // allows "default:" case for SV fields
+              case 2: // GSV message number (e.g., 2nd of n)
+                if (parseInt( sat_index, chr ) && (chr == ','))
+                  sat_index = (sat_index - 1) * 4;
+                break;
               default:
                 if (sat_index < MAX_SATELLITES) {
-//if ((fieldIndex % 4) == 0) trace << PSTR(" si ") << sat_index;
                   switch (fieldIndex % 4) {
-                    CASE_SV_id(0);
-                    CASE_SV_elev(1);
-                    CASE_SV_az(2);
-                    SV_snr(default);
+                    case 0: return parseInt( satellites[sat_index].id, chr );
+#ifdef NMEAGPS_PARSE_SATELLITE_INFO
+                    case 1: return parseInt( satellites[sat_index].elevation, chr );
+                    case 2: return parseInt( satellites[sat_index].azimuth, chr );
+                    case 3:
+                      if (chr == ',') {
+                        sat_index++;
+                        satellites[sat_index].tracked = (chrCount != 0);
+                      } else
+                        parseInt( satellites[sat_index].snr, chr );
+#else
+                    case 3:
+                      if (chr == ',')
+                        sat_index++;
+#endif
+                      break;
                   }
                 }
 #endif

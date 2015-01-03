@@ -105,27 +105,40 @@ public:
 
       trace << merged;
 
-#ifdef NMEAGPS_PARSE_SATELLITES
-      trace << ',' << '[';
-      // This is a little dangerous because gps.satellites is volatile.
-      // If you need to access the satellites array, be sure to
-      // use one of the mitigation techniques: is_coherent+synchronized or
-      // copy a safe_array.
+#if defined(NMEAGPS_PARSE_SATELLITES)
+      if (merged.valid.satellites) {
+        trace << ',' << '[';
 
-      for (uint8_t i=0; i < merged.satellites; i++) {
-        trace << gps.satellites[i].id;
-#ifdef NMEAGPS_PARSE_GSV
-        trace << ' ' << 
-          gps.satellites[i].elevation << '/' << gps.satellites[i].azimuth;
-        trace << '@';
-        if (gps.satellites[i].tracked)
-          trace << gps.satellites[i].snr;
-        else
-          trace << '-';
+        // This is a little dangerous because gps.satellites is volatile.
+        // If you need to access the satellites array, be sure to
+        // use one of the mitigation techniques: is_coherent+synchronized or
+        // copy a safe_array.
+        uint8_t i_max = merged.satellites;
+        if (i_max > NMEAGPS::MAX_SATELLITES)
+          i_max = NMEAGPS::MAX_SATELLITES;
+
+        for (uint8_t i=0; i < i_max; i++) {
+          trace << gps.satellites[i].id;
+#if defined(NMEAGPS_PARSE_SATELLITE_INFO)
+          trace << ' ' << 
+            gps.satellites[i].elevation << '/' << gps.satellites[i].azimuth;
+          trace << '@';
+          if (gps.satellites[i].tracked)
+            trace << gps.satellites[i].snr;
+          else
+            trace << '-';
 #endif
-        trace << ',';
+          trace << ',';
+        }
+        trace << ']';
       }
-      trace << ']';
+
+#else
+
+#ifdef GPS_FIX_SATELLITES
+      trace << merged.satellites << ',';
+#endif
+
 #endif
 
       trace << '\n';

@@ -14,6 +14,20 @@ UART uart1(1, &ibuf, &obuf);
 
 #include "NMEAGPS.h"
 
+#if !defined( NMEAGPS_PARSE_GGA ) & !defined( NMEAGPS_PARSE_GLL ) & \
+    !defined( NMEAGPS_PARSE_GSA ) & !defined( NMEAGPS_PARSE_GSV ) & \
+    !defined( NMEAGPS_PARSE_RMC ) & !defined( NMEAGPS_PARSE_VTG ) & \
+    !defined( NMEAGPS_PARSE_ZDA ) & !defined( NMEAGPS_PARSE_GST )
+
+#if defined(GPS_FIX_DATE)| defined(GPS_FIX_TIME)
+#error No NMEA sentences enabled: no fix data available for fusing.
+#else
+#warning No NMEA sentences enabled: no fix data available for fusing,\n\
+ only pulse-per-second is available.
+#endif
+
+#endif
+
 #if !defined(GPS_FIX_DATE) & !defined(GPS_FIX_TIME)
 static uint32_t seconds = 0L;
 #endif
@@ -33,22 +47,36 @@ static void traceIt()
 
   trace << fused;
 
-#ifdef NMEAGPS_PARSE_SATELLITES
-  trace << ',' << '[';
-  for (uint8_t i=0; i < fused.satellites; i++) {
-    trace << gps.satellites[i].id;
-#ifdef NMEAGPS_PARSE_GSV
-    trace << ' ' << 
-      gps.satellites[i].elevation << '/' << gps.satellites[i].azimuth;
-    trace << '@';
-    if (gps.satellites[i].tracked)
-      trace << gps.satellites[i].snr;
-    else
-      trace << '-';
+#if defined(NMEAGPS_PARSE_SATELLITES)
+  if (fused.valid.satellites) {
+    trace << ',' << '[';
+
+    uint8_t i_max = fused.satellites;
+    if (i_max > NMEAGPS::MAX_SATELLITES)
+      i_max = NMEAGPS::MAX_SATELLITES;
+
+    for (uint8_t i=0; i < i_max; i++) {
+      trace << gps.satellites[i].id;
+#if defined(NMEAGPS_PARSE_SATELLITE_INFO)
+      trace << ' ' << 
+        gps.satellites[i].elevation << '/' << gps.satellites[i].azimuth;
+      trace << '@';
+      if (gps.satellites[i].tracked)
+        trace << gps.satellites[i].snr;
+      else
+        trace << '-';
 #endif
-    trace << ',';
+      trace << ',';
+    }
+    trace << ']';
   }
-  trace << ']';
+
+#else
+
+#ifdef GPS_FIX_SATELLITES
+  trace << fused.satellites << ',';
+#endif
+
 #endif
 
   trace << '\n';

@@ -34,39 +34,62 @@ public:
       }
         state:8;
 
+    uint32_t last_rx;
+    uint32_t last_trace;
+    uint32_t last_sentence;
+
+
     bool ok_to_process;
     
     MyGPS( IOStream::Device *device ) : ubloxGPS( device )
       {
         state = GETTING_STATUS;
+        last_rx = 0L;
+        last_trace = 0L;
+        last_sentence = 0L;
         ok_to_process = false;
       };
 
     //--------------------------
 
+    void begin()
+      {
+        last_rx = RTC::millis();
+        last_trace = seconds;
+      }
+
+    //--------------------------
+
     void run()
     {
-      static uint32_t last = 0;
-      if (last == 0) last = seconds;
+      bool rx = false;
 
-      if ((seconds - last) > 2L) {
-        last = seconds;
-        trace << PSTR("RESTART!\n");
-        if (state != GETTING_STATUS) {
-          state = GETTING_STATUS;
-          enable_msg( ublox::UBX_NAV, ublox::UBX_NAV_STATUS );
-        }
-      } else {
-        while (uart1.available()) {
-          if (decode( uart1.getchar() ) == DECODE_COMPLETED) {
-            last = seconds;
-            if (ok_to_process)
-              processSentence();
-          }
+      while (uart1.available()) {
+        rx = true;
+        if (decode( uart1.getchar() ) == DECODE_COMPLETED) {
+          if (ok_to_process)
+            processSentence();
         }
       }
+
+      uint32_t ms = RTC::millis();
+
+      if (rx)
+        last_rx = ms;
+
+      else {
+        if (ok_to_process && ((ms - last_rx) > 2000L)) {
+          last_rx = ms;
+          trace << PSTR("RESTART!\n");
+          if (state != GETTING_STATUS) {
+            state = GETTING_STATUS;
+            enable_msg( ublox::UBX_NAV, ublox::UBX_NAV_STATUS );
+          }
+        }
+
+        Power::sleep();
+      }
       
-      Power::sleep();
     }
 
     //--------------------------
@@ -86,6 +109,7 @@ public:
 //trace << PSTR("u ") << rx().msg_class << PSTR("/") << rx().msg_id << endl;
           ok = true;
 
+          // Use the STATUS message as a pulse-per-second
           if ((rx().msg_class == ublox::UBX_NAV) &&
               (rx().msg_id == ublox::UBX_NAV_STATUS))
             seconds++;
@@ -145,15 +169,25 @@ public:
 
 #endif
 
-#if defined(GPS_FIX_LOCATION) | defined(GPS_FIX_ALTITUDE)
+#if (defined(GPS_FIX_LOCATION) | defined(GPS_FIX_ALTITUDE)) & \
+    defined(UBLOX_PARSE_POSLLH)
+
                 if (!enable_msg( ublox::UBX_NAV, ublox::UBX_NAV_POSLLH ))
                   trace << PSTR("enable POSLLH failed!\n");
 #endif
 
-#if defined(GPS_FIX_SPEED) | defined(GPS_FIX_HEADING)
+#if (defined(GPS_FIX_SPEED) | defined(GPS_FIX_HEADING)) & \
+    defined(UBLOX_PARSE_VELNED)
                 if (!enable_msg( ublox::UBX_NAV, ublox::UBX_NAV_VELNED ))
                   trace << PSTR("enable VELNED failed!\n");
 #endif
+
+#if defined(NMEAGPS_PARSE_SATELLITES) & \
+    defined(UBLOX_PARSE_SVINFO)
+                if (!enable_msg( ublox::UBX_NAV, ublox::UBX_NAV_SVINFO ))
+                  trace << PSTR("enable SVINFO failed!\n");
+#endif
+
               }
               break;
 
@@ -175,21 +209,15 @@ public:
                              (merged.dateTime.month != fix().dateTime.month) ||
                              (merged.dateTime.year  != fix().dateTime.year)));
 #else
-              //  No date/time configured, so let's assume it's a new interval
-              //  if it has been a while since the last sentence was received.
-              static uint32_t last_sentence = 0L;
-
+              //  No date/time configured, so let's assume it's a new
+              //  interval if it a new STATUS message was received.
               newInterval = (seconds != last_sentence);
-              last_sentence = seconds;
 #endif
 //trace << PSTR("ps mvd ") << merged.valid.date << PSTR("/") << fix().valid.date;
 //trace << PSTR(", mvt ") << merged.valid.time << PSTR("/") << fix().valid.time;
 //trace << merged.dateTime << PSTR("/") << fix().dateTime;
 //trace << PSTR(", ni = ") << newInterval << endl;
               if (newInterval) {
-
-                // Log the previous interval
-                traceIt();
 
                 //  Since we're into the next time interval, we throw away
                 //     all of the previous fix and start with what we
@@ -204,6 +232,8 @@ public:
           }
         }
 
+        last_sentence = seconds;
+
         ok_to_process = old_otp;
 
         return ok;
@@ -213,11 +243,48 @@ public:
 
     void traceIt()
     {
+      if ((state == RUNNING) && (last_trace != 0)) {
+
 #if !defined(GPS_FIX_DATE) & !defined(GPS_FIX_TIME)
-      trace << seconds << ',';
+        trace << seconds << ',';
 #endif
 
-      trace << merged << '\n';
+        trace << merged;
+
+#if defined(NMEAGPS_PARSE_SATELLITES)
+        if (merged.valid.satellites) {
+          trace << ',' << '[';
+
+          uint8_t i_max = merged.satellites;
+          if (i_max > MAX_SATELLITES)
+            i_max = MAX_SATELLITES;
+
+          for (uint8_t i=0; i < i_max; i++) {
+            trace << satellites[i].id;
+#if defined(NMEAGPS_PARSE_SATELLITE_INFO)
+            trace << ' ' << 
+              satellites[i].elevation << '/' << satellites[i].azimuth;
+            trace << '@';
+            if (satellites[i].tracked)
+              trace << satellites[i].snr;
+            else
+              trace << '-';
+#endif
+            trace << ',';
+          }
+          trace << ']';
+        }
+#else
+#ifdef GPS_FIX_SATELLITES
+        trace << merged.satellites << ',';
+#endif
+#endif
+
+        trace << '\n';
+
+      }
+
+      last_trace = seconds;
 
     } // traceIt
 
@@ -243,6 +310,8 @@ void setup()
   // Start the UART for the GPS device
   uart1.begin(9600);
 
+  gps.begin();
+
   // Turn off the preconfigured NMEA standard messages
   for (uint8_t i=NMEAGPS::NMEA_FIRST_MSG; i<=NMEAGPS::NMEA_LAST_MSG; i++) {
     ublox::configNMEA( gps, (NMEAGPS::nmea_msg_t) i, 0 );
@@ -265,4 +334,10 @@ void setup()
 void loop()
 {
   gps.run();
+  if ((gps.last_trace != seconds) &&
+      (RTC::millis() - gps.last_rx > 5)) {
+    // It's been 5ms since we received anything,
+    // log what we have so far...
+    gps.traceIt();
+  }
 }
