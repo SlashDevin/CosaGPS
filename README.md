@@ -2,7 +2,7 @@ CosaGPS
 ======
 
 This fully-configurable [Cosa](https://github.com/mikaelpatel/Cosa) library uses _**minimal**_ RAM and CPU time, 
-requiring as few as _**10 bytes of RAM**_.  It supports the following protocols:
+requiring as few as _**10 bytes of RAM**_ and 1mS of CPU time per sentence.  It supports the following protocols:
 ####NMEA 0183
 * GPGGA - GPS system fix data
 * GPGLL - Geographic Latitude and Longitude
@@ -101,6 +101,8 @@ plus 5 static bytes for converting GPS time and Time Of Week to UTC.
 Performance
 ===========
 
+####**CosaGPS** is **50% faster _or more_**.
+
 Most libraries use extra buffers to accumulate parts of the sentence so they 
 can be parsed all at once.  For example, an extra field buffer may hold on 
 to all the characters between commas.  That buffer is then parsed into a 
@@ -129,13 +131,14 @@ $GPGGA,092725.00,4717.11399,N,00833.91590,E,1,8,1.01,499.6,M,48.0,M,,0*5B
 $GPRMC,083559.00,A,4717.11437,N,00833.91522,E,0.004,77.52,091202,,,A*57
 ```
 
-**CosaGPS** takes 1000uS to completely parse a GPGGA sentence, and 
-**NeoGPS** takes 1074uS, and TinyGPS takes 1448uS.  **CosaGPS** takes 1049uS 
-to completely parse a GPRMC sentence, and **NeoGPS** takes 1106uS, and 
-**TinyGPS** takes 1435uS.
+**CosaGPS** takes 1000uS to completely parse a GPGGA sentence, 
+**NeoGPS** takes 1074uS, and **TinyGPS** takes 1448uS.
+
+**CosaGPS** takes 1049uS to completely parse a GPRMC sentence, 
+and **NeoGPS** takes 1106uS, and **TinyGPS** takes 1435uS.
  
-When configured to parse just date, time and location, CosaGPS takes 912uS to completely parse a GPGGA sentence, and 971uS to completely parse a 
-GPRMC sentence.
+When configured to parse just date, time and location, **CosaGPS** takes 912uS to 
+completely parse a GPGGA sentence, and 971uS to completely parse a GPRMC sentence.
 
 Tradeoffs
 =========
