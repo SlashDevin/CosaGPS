@@ -33,7 +33,7 @@
  * DATE and TIME are somewhat coupled in that they share a single `time_t`,
  * but they have separate validity flags.
  *
- * See also note regarding the HDOP member, below.
+ * See also note regarding the DOP members, below.
  *
  */
 
@@ -44,12 +44,12 @@
 #define GPS_FIX_SPEED
 #define GPS_FIX_HEADING
 #define GPS_FIX_SATELLITES
-#define GPS_FIX_HDOP
-#define GPS_FIX_VDOP
-#define GPS_FIX_PDOP
-#define GPS_FIX_LAT_ERR
-#define GPS_FIX_LON_ERR
-#define GPS_FIX_ALT_ERR
+//#define GPS_FIX_HDOP
+//#define GPS_FIX_VDOP
+//#define GPS_FIX_PDOP
+//#define GPS_FIX_LAT_ERR
+//#define GPS_FIX_LON_ERR
+//#define GPS_FIX_ALT_ERR
 
 /**
  * A structure for holding a GPS fix: time, position, velocity, etc.

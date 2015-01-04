@@ -11,6 +11,13 @@
 
 #include "NMEAGPS.h"
 
+#if defined(GPS_FIX_DATE) & !defined(GPS_FIX_TIME)
+// uncomment this to display just one pulse-per-day.
+//#define PULSE_PER_DAY
+#endif
+
+static uint32_t seconds = 0L;
+
 extern UART uart1;
 
 class MyGPS : public IOStream::Device, public Event::Handler
@@ -19,7 +26,6 @@ protected:
   NMEAGPS gps;
   gps_fix merged;
   gps_fix safe_fix;
-
 
 public:
     /**
@@ -42,16 +48,9 @@ public:
 
     void sentenceReceived()
     {
-#if !defined(GPS_FIX_DATE) & !defined(GPS_FIX_TIME)
-      // No date/time fields enabled, use received GPRMC sentence as a pulse
-      // Make sure it's enabled.
-#ifndef NMEAGPS_PARSE_RMC
-#error NMEAGPS_PARSE_RMC must be defined in NMEAGPS.h!
-#endif
-      if (gps.nmeaMessage == NMEAGPS::NMEA_RMC) {
+      if (gps.nmeaMessage == NMEAGPS::NMEA_RMC)
+        // Use received GPRMC sentence as a pulse
         seconds++;
-      }
-#endif
 
       // See if we stepped into a different time interval,
       //   or if it has finally become valid after a cold start.
@@ -63,7 +62,7 @@ public:
                      (merged.dateTime.seconds != safe_fix.dateTime.seconds) ||
                      (merged.dateTime.minutes != safe_fix.dateTime.minutes) ||
                      (merged.dateTime.hours   != safe_fix.dateTime.hours)));
-#elif defined(GPS_FIX_DATE)
+#elif defined(PULSE_PER_DAY)
       newInterval = (safe_fix.valid.date &&
                     (!merged.valid.date ||
                      (merged.dateTime.date  != safe_fix.dateTime.date) ||
@@ -71,7 +70,7 @@ public:
                      (merged.dateTime.year  != safe_fix.dateTime.year)));
 #else
       //  No date/time configured, so let's assume it's a new interval
-      //  if it has been a while since the last sentence was received.
+      //  if the seconds have changed.
       static uint32_t last_sentence = 0L;
       
       newInterval = (seconds != last_sentence);
@@ -99,7 +98,7 @@ public:
 
     void traceIt()
     {
-#if !defined(GPS_FIX_DATE) & !defined(GPS_FIX_TIME)
+#if !defined(GPS_FIX_TIME) & !defined(PULSE_PER_DAY)
       trace << seconds << ',';
 #endif
 
@@ -132,13 +131,6 @@ public:
         }
         trace << ']';
       }
-
-#else
-
-#ifdef GPS_FIX_SATELLITES
-      trace << merged.satellites << ',';
-#endif
-
 #endif
 
       trace << '\n';
