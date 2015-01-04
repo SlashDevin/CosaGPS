@@ -1,8 +1,9 @@
 CosaGPS
 ======
 
-This fully-configurable [Cosa](https://github.com/mikaelpatel/Cosa) library uses _**minimal**_ RAM and CPU time, 
-requiring as few as _**10 bytes of RAM**_ and 1mS of CPU time per sentence.  It supports the following protocols:
+This fully-configurable [Cosa](https://github.com/mikaelpatel/Cosa) library uses _**minimal**_ RAM, PROGMEM, CPU time, 
+requiring as few as _**10 bytes of RAM**_, **866 bytes of PROGMEM**, and **less than 1mS of CPU time per sentence.  It supports the following protocols:
+
 ####NMEA 0183
 * GPGGA - GPS system fix data
 * GPGLL - Geographic Latitude and Longitude
@@ -74,12 +75,15 @@ Typical Configurations
 A few common configurations are defined as follows
 
 **Minimal**: no fix members, no messages (pulse-per-second only)
+
 **DTL**: date, time, lat/lon, GPRMC messsage only.
+
 **Nominal**: date, time, lat/lon, altitude, speed, heading, number of 
 satellites, HDOP, GPRMC and GPGGA messages.
+
 **Full**: Nominal plus VDOP, PDOP, lat/lon/alt errors, satellite array with satellite info, and all 8 messages.
 
-**TinyGPS** uses the **Nominal** configuration.
+(**TinyGPS** uses the **Nominal** configuration.)
 
 RAM requirements
 =======
@@ -171,7 +175,7 @@ The **Minimal** configuration requires 866 bytes.
 
 The **DTL** configuration requires 2072 bytes.
 
-The **Nominal* configuration requires 2800 bytes.
+The **Nominal** configuration requires 2800 bytes.
 
 The **Full** configuration requires 3462 bytes.
 
