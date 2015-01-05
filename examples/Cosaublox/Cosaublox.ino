@@ -15,6 +15,11 @@ static IOBuffer<UART::BUFFER_MAX> obuf;
 static IOBuffer<UART::BUFFER_MAX> ibuf;
 UART uart1(1, &ibuf, &obuf);
 
+#if defined(GPS_FIX_DATE) & !defined(GPS_FIX_TIME)
+// uncomment this to display just one pulse-per-day.
+//#define PULSE_PER_DAY
+#endif
+
 static uint32_t seconds = 0L;
 
 //--------------------------
@@ -102,11 +107,10 @@ public:
         bool ok = false;
 
         if (!ok && (nmeaMessage >= (nmea_msg_t)ubloxGPS::PUBX_00)) {
-//trace << PSTR("n ") << nmeaMessage << endl;
           ok = true;
         }
+
         if (!ok && (rx().msg_class != ublox::UBX_UNK)) {
-//trace << PSTR("u ") << rx().msg_class << PSTR("/") << rx().msg_id << endl;
           ok = true;
 
           // Use the STATUS message as a pulse-per-second
@@ -202,7 +206,7 @@ public:
                              (merged.dateTime.seconds != fix().dateTime.seconds) ||
                              (merged.dateTime.minutes != fix().dateTime.minutes) ||
                              (merged.dateTime.hours   != fix().dateTime.hours)));
-#elif defined(GPS_FIX_DATE)
+#elif defined(PULSE_PER_DAY)
               newInterval = (fix().valid.date &&
                             (!merged.valid.date ||
                              (merged.dateTime.date  != fix().dateTime.date) ||
@@ -210,13 +214,10 @@ public:
                              (merged.dateTime.year  != fix().dateTime.year)));
 #else
               //  No date/time configured, so let's assume it's a new
-              //  interval if it a new STATUS message was received.
+              //  if the seconds have changed.
               newInterval = (seconds != last_sentence);
 #endif
-//trace << PSTR("ps mvd ") << merged.valid.date << PSTR("/") << fix().valid.date;
-//trace << PSTR(", mvt ") << merged.valid.time << PSTR("/") << fix().valid.time;
-//trace << merged.dateTime << PSTR("/") << fix().dateTime;
-//trace << PSTR(", ni = ") << newInterval << endl;
+
               if (newInterval) {
 
                 //  Since we're into the next time interval, we throw away
@@ -245,7 +246,7 @@ public:
     {
       if ((state == RUNNING) && (last_trace != 0)) {
 
-#if !defined(GPS_FIX_DATE) & !defined(GPS_FIX_TIME)
+#if !defined(GPS_FIX_TIME) & !defined(PULSE_PER_DAY)
         trace << seconds << ',';
 #endif
 
@@ -274,14 +275,9 @@ public:
           }
           trace << ']';
         }
-#else
-#ifdef GPS_FIX_SATELLITES
-        trace << merged.satellites << ',';
-#endif
 #endif
 
         trace << '\n';
-
       }
 
       last_trace = seconds;

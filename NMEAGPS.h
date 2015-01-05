@@ -35,7 +35,7 @@
  * required if you will be doing time_t-to-clock_t operations.
  */
 
-//#define NMEAGPS_PARSE_GGA
+#define NMEAGPS_PARSE_GGA
 //#define NMEAGPS_PARSE_GLL
 //#define NMEAGPS_PARSE_GSA
 //#define NMEAGPS_PARSE_GSV

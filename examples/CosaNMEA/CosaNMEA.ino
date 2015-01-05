@@ -80,11 +80,6 @@ void loop()
     if (gps.decode( uart1.getchar() ) == NMEAGPS::DECODE_COMPLETED) {
 //      trace << (uint8_t) gps.nmeaMessage << ' ';
 
-// Make sure that the only sentence we care about is enabled
-#ifndef NMEAGPS_PARSE_RMC
-#error NMEAGPS_PARSE_RMC must be defined in NMEAGPS.h!
-#endif
-
       if (gps.nmeaMessage == NMEAGPS::NMEA_RMC) {
         sentenceReceived();
 

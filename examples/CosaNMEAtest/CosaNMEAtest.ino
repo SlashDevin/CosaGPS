@@ -2,6 +2,7 @@
   This test program uses one GPGGA sentence to test the parser's:
   1) robustness WRT dropped, inserted, and mangled characters
   2) correctness WRT values extracted from the input stream
+  
   Some care in testing must be taken because
   1) The XOR-style checksum is not very good at catching errors.  
   2) The '*' is a special character for delimiting the CRC.  If
@@ -57,6 +58,30 @@
 static NMEAGPS gps;
 
 //--------------------------
+// Example sentences
+
+const char validGGA[] __PROGMEM =
+  "$GPGGA,092725.00,4717.11399,N,00833.91590,E,"
+    "1,8,1.01,499.6,M,48.0,M,,0*5B\r\n";
+const char validRMC[] __PROGMEM =
+  "$GPRMC,092725.00,A,4717.11437,N,00833.91522,E,"
+    "0.004,77.52,091202,,,A*5E\r\n";
+
+static void traceSample( str_P ptr )
+{
+    trace << PSTR("Input:\n  ") << ptr;
+    char c;
+
+    char *p = (char *) ptr;
+    while ( c = pgm_read_byte( p++ ) ) {
+      if (NMEAGPS::DECODE_COMPLETED == gps.decode( c )) {
+        trace << PSTR("Results:\n  ");
+        trace << gps.fix() << '\n';
+      }
+    }
+}
+
+//--------------------------
 
 static uint8_t passed = 0;
 static uint8_t failed = 0;
@@ -92,8 +117,6 @@ void setup()
   }
   passed++;
 
-  // An example sentence
-  const char *validGGA = (const char *) PSTR("$GPGGA,092725.00,4717.11399,N,00833.91590,E,1,8,1.01,499.6,M,48.0,M,,0*5B\r\n");
   uint8_t validGGA_len = 0;
 
   // Insert a ' ' at each position of the test sentence
@@ -180,8 +203,7 @@ void setup()
         gps_fix expected;
         expected.dateTime.parse( PSTR("2002-12-09 09:27:25") );
         expected.dateTime_cs = 0;
-// $GPRMC,092725.00,A,4717.11437,N,00833.91522,E,0.004,77.52,091202,,,A
-// $GPGGA,092725.00,4717.11399,N,00833.91590,E,1,8,1.01,499.6,M,48.0,M,,0*5B
+
         if (gps.nmeaMessage != NMEAGPS::NMEA_GGA) {
           trace << PSTR("FAILED wrong message type ") << gps.nmeaMessage << endl;
           failed++;
@@ -237,8 +259,13 @@ void setup()
 void loop()
 {
   trace << PSTR("PASSED ") << passed << PSTR(" tests.\n");
-  if (failed)
+  if (failed) {
     trace << PSTR("FAILED ") << failed << PSTR(" tests.\n");
+  } else {
+    trace << PSTR("------ Samples ------\n");
+    traceSample( (str_P) validGGA );
+    traceSample( (str_P) validRMC );
+  }
 
   for (;;);
 }

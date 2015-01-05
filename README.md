@@ -38,11 +38,15 @@ In an attempt to be reusable in a variety of different programming styles, this 
 * configurable message sets, including hooks for implementing proprietary NMEA messages
 * configurable message fields
 * multiple protocols from same device
+* any kind of input stream (Serial, SoftwareSerial, PROGMEM arrays, or any other source of bytes)
 
 Data Model
 ==========
 Rather than holding onto individual fields, the concept of a **fix** is used to group data members of the GPS acquisition.
-This also facilitates the merging of separately received packets into a coherent position.  The members of `gps_fix` include 
+This also facilitates the merging of separately received packets into a coherent position.
+
+The members of `gps_fix` include 
+
 * fix status
 * date
 * time
@@ -223,15 +227,38 @@ Examples
 ======
 Several programs are provided to demonstrate how to use the classes in these different styles:
 
-* [CosaNMEA](examples/CosaNMEA.ino) - sync, polled, not fused, standard NMEA only
-* [CosaNMEAdevice](examples/CosaNMEAdevice.ino) - async, polled, fused, standard NMEA only
-* [CosaNMEAevent](examples/CosaNMEAevent.ino) - async, event, fused, standard NMEA only
-* [CosaPUBX](examples/CosaPUBX.ino) - sync, polled, not fused, standard NMEA + ublox proprietary NMEA
-* [Cosaublox](examples/Cosaublox.ino) - sync, polled, fused, ublox protocol
-* [CosaNMEAtest.ino](examples/CosaNMEAtest.ino) - sync, polled, not fused, standard NMEA only (This is a self-test program.  Various strings are passed to `decode` and the expected pass or fail results are displayed.  No GPS device is required.)
+* [CosaNMEA](examples/CosaNMEA/CosaNMEA.ino) - sync, polled, not fused, standard NMEA only
+* [CosaNMEAfused](examples/CosaNMEAfused/CosaNMEAfused.ino) - sync, polled, fused, standard NMEA only
+* [CosaNMEAcoherent](examples/CosaNMEAcoherent/CosaNMEAcoherent.ino) - sync, polled, coherent, standard NMEA only
+* [CosaNMEAdevice](examples/CosaNMEAdevice/CosaNMEAdevice.ino) - async, polled, coherent, standard NMEA only
+* [CosaNMEAevent](examples/CosaNMEAevent/CosaNMEAevent.ino) - async, event, coherent, standard NMEA only
+* [CosaPUBX](examples/CosaPUBX/CosaPUBX.ino) - sync, polled, coherent, standard NMEA + ublox proprietary NMEA
+* [Cosaublox](examples/Cosaublox/Cosaublox.ino) - sync, polled, coherent, ublox protocol
 
 Preprocessor symbol `USE_FLOAT` can be used in [GPSfix.cpp](GPSfix.cpp) to select integer or floating-point output.
 
+A self-test test program is also provided:
+
+* [CosaNMEAtest.ino](examples/CosaNMEAtest/CosaNMEAtest.ino) - sync, polled, not fused, standard NMEA only (This is a self-test program.  Various strings are passed to `decode` and the expected pass or fail results are displayed.  No GPS device is required.)
+
+No GPS device is required; the bytes are streamed from PROGMEM character arrays.  Various strings are passed to `decode` and the expected pass or fail results are displayed.  If **NeoGPS** is correctly configured, you should see this on your SerialMonitor:
+
+```
+CosaNMEAGPS: started
+fix object size = 34
+NMEAGPS object size = 41
+Test string length = 75
+PASSED 6 tests.
+------ Samples ------
+Input:
+  $GPGGA,092725.00,4717.11399,N,00833.91590,E,1,8,1.01,499.6,M,48.0,M,,0*5B
+Results:
+  3,2000-00-00 09:27:25.00,472852332,85652650,,,49960,8,1010,
+Input:
+  $GPRMC,092725.00,A,4717.11437,N,00833.91522,E,0.004,77.52,091202,,,A*5E
+Results:
+  3,2002-12-09 09:27:25.00,472852395,85652537,7752,4,,,,
+```
 Acknowledgements
 ==========
 Mikal Hart's [TinyGPS](https://github.com/mikalhart/TinyGPS) for the generic `decode` approach.
