@@ -208,7 +208,7 @@ Before accessing a part, you must check its `valid` flag.  Fortunately, this add
 
 ####Correlating timestamps for coherency means extra date/time comparisons for each sentence before it is fused.
 
-This is optional: compare CosaNMEA.ino and CosaNMEAfused.ino to see code that determines when a new time interval has been entered.
+This is optional: compare CosaNMEAcoherent.ino and CosaNMEAfused.ino to see code that determines when a new time interval has been entered.
 
 ####Full C++ OO implementation is more advanced than most Arduino libraries.
 
