@@ -313,6 +313,7 @@ public:
     static const uint8_t MAX_SATELLITES = 20;
     satellite_view_t satellites[ MAX_SATELLITES ];
 
+    bool satellites_valid() const { return (sat_index == m_fix.satellites); }
 protected:
     uint8_t sat_index; // only used during parsing
 

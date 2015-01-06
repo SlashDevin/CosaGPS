@@ -323,16 +323,14 @@ bool NMEAGPS::parseField(char chr)
           switch (fieldIndex) {
               case 2:
                 if (chrCount == 0) {
-                  if (chr == '1') {
-                    m_fix.status = gps_fix::STATUS_NONE;
-                    m_fix.valid.status = true;
-                  } else if ((chr == '2') || (chr == '3')) {
+                  if ((chr == '2') || (chr == '3')) {
                     m_fix.status = gps_fix::STATUS_STD;
                     m_fix.valid.status = true;
-                  } else if (chr == ',')
-                    m_fix.valid.status = false;
-                } else if (chr != ',')
-                  m_fix.valid.status = false;
+                  } else if (chr == '1') {
+                    m_fix.status = gps_fix::STATUS_NONE;
+                    m_fix.valid.status = true;
+                  }
+                }
                 break;
               case 15: return parsePDOP( chr );
               case 16: return parseHDOP( chr );
@@ -350,13 +348,16 @@ bool NMEAGPS::parseField(char chr)
               case 1: break; // allows "default:" case for SV fields
               case 3:
                 if (chrCount == 0) {
-                  m_fix.satellites = 0;
                   m_fix.valid.satellites = true;
+                  m_fix.satellites = 0;
+                  sat_index = 0;
                 }
               default:
                 if (chr == ',') {
-                  if (chrCount > 0)
+                  if (chrCount > 0) {
                     m_fix.satellites++;
+                    sat_index = m_fix.satellites;
+                  }
                 } else
                   return parseInt( satellites[m_fix.satellites].id, chr );
                 break;
@@ -384,7 +385,12 @@ bool NMEAGPS::parseField(char chr)
 #ifdef NMEAGPS_PARSE_SATELLITES
               case 1: break; // allows "default:" case for SV fields
               case 2: // GSV message number (e.g., 2nd of n)
-                if (parseInt( sat_index, chr ) && (chr == ','))
+                if (chr != ',')
+                  // sat_index is temporarily used to hold the MsgNo...
+                  parseInt( sat_index, chr );
+                else
+                  // ...then it's converted to the real sat_index
+                  // based on up to 4 satellites per msg.
                   sat_index = (sat_index - 1) * 4;
                 break;
               default:
@@ -444,7 +450,12 @@ bool NMEAGPS::parseField(char chr)
 #ifdef GPS_FIX_DATE
             case 2: parseInt( m_fix.dateTime.date , chr ); break;
             case 3: parseInt( m_fix.dateTime.month, chr ); break;
-            case 4: m_fix.valid.date = parseInt( m_fix.dateTime.year, chr ); break;
+            case 4:
+              if (chr != ',')
+                parseInt( m_fix.dateTime.year, chr );
+              else
+                m_fix.valid.date = true;
+              break;
 #endif
           }
 #endif
@@ -461,8 +472,6 @@ bool NMEAGPS::parseField(char chr)
 
 bool NMEAGPS::parseTime(char chr)
 {
-  bool ok = true;
-
 #ifdef GPS_FIX_TIME
   switch (chrCount) {
       case 0: m_fix.dateTime.hours    = (chr - '0')*10; break;
@@ -471,27 +480,24 @@ bool NMEAGPS::parseTime(char chr)
       case 3: m_fix.dateTime.minutes += (chr - '0');    break;
       case 4: m_fix.dateTime.seconds  = (chr - '0')*10; break;
       case 5: m_fix.dateTime.seconds += (chr - '0');    break;
-      case 6: if (chr != '.') ok = false;               break;
-      case 7: m_fix.dateTime_cs       = (chr - '0')*10; break;
-      case 8: m_fix.dateTime_cs      += (chr - '0');    break;
-      case 9:
+      default:
         if (chr == ',')
           m_fix.valid.time = true;
-        else
-          ok = false;
+        else if (chrCount == 7)
+          m_fix.dateTime_cs  = (chr - '0')*10;
+        else if (chrCount == 8)
+          m_fix.dateTime_cs += (chr - '0');
         break;
   }
 #endif
 
-  return ok;
+  return true;
 }
 
 //---------------------------------
 
 bool NMEAGPS::parseDDMMYY( char chr )
 {
-  bool ok = true;
-
 #ifdef GPS_FIX_DATE
   switch (chrCount) {
     case 0: m_fix.dateTime.date   = (chr - '0')*10; break;
@@ -500,25 +506,22 @@ bool NMEAGPS::parseDDMMYY( char chr )
     case 3: m_fix.dateTime.month += (chr - '0');    break;
     case 4: m_fix.dateTime.year   = (chr - '0')*10; break;
     case 5: m_fix.dateTime.year  += (chr - '0');    break;
-    case 6:
+    default:
       if (chr == ',')
         m_fix.valid.date = true;
-      else
-        ok = false;
       break;
   }
 #endif
 
-  return ok;
+  return true;
 }
 
 //---------------------------------
 
 bool NMEAGPS::parseFix( char chr )
 {
-  bool ok = true;
-
   if (chrCount == 0) {
+    bool ok = true;
     if ((chr == '1') || (chr == 'A'))
       m_fix.status = gps_fix::STATUS_STD;
     else if ((chr == '0') || (chr == 'N') || (chr == 'V'))
@@ -529,14 +532,11 @@ bool NMEAGPS::parseFix( char chr )
       m_fix.status = gps_fix::STATUS_EST;
     else
       ok = false;
-  } else if (chrCount == 1) {
-    if (chr == ',')
+    if (ok)
       m_fix.valid.status = true;
-    else
-      ok = false;
   }
 
-  return ok;
+  return true;
 }
 
 //---------------------------------

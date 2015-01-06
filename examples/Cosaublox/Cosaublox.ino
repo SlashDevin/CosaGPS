@@ -330,6 +330,7 @@ void setup()
 void loop()
 {
   gps.run();
+
   if ((gps.last_trace != seconds) &&
       (RTC::millis() - gps.last_rx > 5)) {
     // It's been 5ms since we received anything,

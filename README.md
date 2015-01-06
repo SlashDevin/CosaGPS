@@ -32,7 +32,7 @@ In an attempt to be reusable in a variety of different programming styles, this 
 * resource-constrained environments (e.g., ATTINY targets)
 * sync or async operation (main `loop()` vs interrupt processing)
 * event or polling (Event::Handler vs. fix() call)
-* fused or not fused (multiple reports into one fix)
+* single, fused or coherent fixes (multiple reports into one)
 * optional buffering of fixes
 * optional floating point
 * configurable message sets, including hooks for implementing proprietary NMEA messages
@@ -76,8 +76,72 @@ gps_fix_t merged;
 merged |= gps_device.fix();
 ```
 
-Typical Configurations
-======================
+Configuration
+=============
+All configuration items are conditional compilations: a `#define` controls an `#if`/`#endif` section.
+
+The following configuration items are near the top of GPSfix.h:
+```
+// Enable/Disable individual parts of a fix, as parsed from fields of a $GPxxx sentence
+#define GPS_FIX_DATE
+#define GPS_FIX_TIME
+#define GPS_FIX_LOCATION
+#define GPS_FIX_ALTITUDE
+#define GPS_FIX_SPEED
+#define GPS_FIX_HEADING
+#define GPS_FIX_SATELLITES
+#define GPS_FIX_HDOP
+#define GPS_FIX_VDOP
+#define GPS_FIX_PDOP
+#define GPS_FIX_LAT_ERR
+#define GPS_FIX_LON_ERR
+#define GPS_FIX_ALT_ERR
+```
+The following configuration items are near the top of NMEAGPS.h:
+```
+// Enable/Disable parsing the fields of a $GPxxx sentence
+#define NMEAGPS_PARSE_GGA
+#define NMEAGPS_PARSE_GLL
+#define NMEAGPS_PARSE_GSA
+#define NMEAGPS_PARSE_GSV
+#define NMEAGPS_PARSE_GST
+#define NMEAGPS_PARSE_RMC
+#define NMEAGPS_PARSE_VTG
+#define NMEAGPS_PARSE_ZDA
+
+// Although normally enabled, this can be disabled if you *do not*
+// derive any classes from NMEAGPS, for slightly smaller/faster code.
+#define NMEAGPS_DERIVED_TYPES
+
+// Enable/disable tracking the current satellite array and,
+// optionally, all the info for each satellite.
+#define NMEAGPS_PARSE_SATELLITES
+#define NMEAGPS_PARSE_SATELLITE_INFO
+```
+
+In ubxNMEA.h, the derived class `ubloxNMEA` has configuration items for the proprietary NMEA messages:
+```
+#define NMEAGPS_PARSE_PUBX_00
+#define NMEAGPS_PARSE_PUBX_04
+```
+
+GPSfix.cpp has a choice for using floating-point output.
+```
+#define USE_FLOAT
+```
+This is local to this file, and is only used by the example programs.  This file is not required, unless you need to stream a `gps_fix`.
+
+Most example programs have a choice for displaying fix information once per day.  (Untested!)
+```
+#define PULSE_PER_DAY
+```
+
+Delete or comment out any items to be excluded from your build.  Where possible, checks are performed to verify that you have chosen a "valid" configuration: you may see `#error` messages in the build log.
+
+####Troubleshooting
+The compiler will catch any attempt to use parts of a `fix` that have been configured out: you will see something like `gps_fix does not have member xxx`.  The compiler **cannot** catch message set dependencies: the `enum nmea_msg_t` is always available.  So even though a `fix` member is enabled, you may have disabled all messages that would have set its value.
+
+####Typical configurations
 A few common configurations are defined as follows
 
 **Minimal**: no fix members, no messages (pulse-per-second only)
@@ -245,19 +309,38 @@ No GPS device is required; the bytes are streamed from PROGMEM character arrays.
 
 ```
 CosaNMEAGPS: started
-fix object size = 34
-NMEAGPS object size = 41
+fix object size = 44
+NMEAGPS object size = 74
 Test string length = 75
 PASSED 6 tests.
 ------ Samples ------
 Input:
   $GPGGA,092725.00,4717.11399,N,00833.91590,E,1,8,1.01,499.6,M,48.0,M,,0*5B
-Results:
-  3,2000-00-00 09:27:25.00,472852332,85652650,,,49960,8,1010,
+Results:  3,2000-00-00 09:27:25.00,472852332,85652650,,,49960,8,1010,,,,,,
 Input:
   $GPRMC,092725.00,A,4717.11437,N,00833.91522,E,0.004,77.52,091202,,,A*5E
-Results:
-  3,2002-12-09 09:27:25.00,472852395,85652537,7752,4,,,,
+Results:  3,2002-12-09 09:27:25.00,472852395,85652537,7752,4,,,,,,,,,
+Input:
+  $GPGGA,064951.000,2307.1256,N,12016.4438,E,1,8,0.95,39.9,M,17.8,M,,*63
+Results:  3,2002-12-09 06:49:51.00,231187600,1202740633,,,3990,8,950,,,,,,
+Input:
+  $GPRMC,064951.000,A,2307.1256,N,12016.4438,E,0.03,165.48,260406,3.05,W,A*2C
+Results:  3,2006-04-26 06:49:51.00,231187600,1202740633,16548,30,,,,,,,,,
+Input:
+  $GPVTG,165.48,T,,M,0.03,N,0.06,K,A*36
+Results:  3,,,,16548,30,,,,,,,,,
+Input:
+  $GPGSA,A,3,29,21,26,15,18,09,06,10,,,,,2.32,0.95,2.11*00
+Results:  3,,,,,,,,950,2110,2320,,,,
+Input:
+  $GPGSV,3,1,09,29,36,029,42,21,46,314,43,26,44,020,43,15,21,321,39*7D
+Results:  ,,,,,,,9,,,,,,,
+Input:
+  $GPGSV,3,2,09,18,26,314,40,09,57,170,44,06,20,229,37,10,26,084,37*77
+Results:  ,,,,,,,9,,,,,,,
+Input:
+  $GPGSV,3,3,09,07,,,26*73
+Results:  ,,,,,,,9,,,,,,,,[29,21,26,15,18,9,6,10,7,]
 ```
 Acknowledgements
 ==========
