@@ -21,7 +21,7 @@ gps_fix safe_fix;
 
 /**
  * Hook the parser directly to the UART so that it processes characters in
- * the interrupt.  The time window for accessing a coherent /fix/ is fairly
+ * the interrupt.  The time window for safely accessing a /fix/ is fairly
  * narrow, about 9 character times, or about 10mS on a 9600-baud connection.
  */
 
@@ -56,7 +56,7 @@ public:
 
     const volatile gps_fix & fix() const { return gps.fix(); };
 
-    bool is_coherent() const { return gps.is_coherent(); }
+    bool is_safe() const { return gps.is_safe(); }
     void poll( IOStream::Device *device, NMEAGPS::nmea_msg_t msg ) const
       { gps.poll(device,msg); };
     void send( IOStream::Device *device, const char *msg ) const
@@ -131,8 +131,8 @@ public:
 
         // This is a little dangerous because gps.satellites is volatile.
         // If you need to access the satellites array, be sure to
-        // use one of the mitigation techniques: is_coherent+synchronized or
-        // copy a safe_array.
+        // use one of the mitigation techniques: is_safe+synchronized 
+        // (as below) and copy a safe_array.
         uint8_t i_max = merged.satellites;
         if (i_max > NMEAGPS::MAX_SATELLITES)
           i_max = NMEAGPS::MAX_SATELLITES;
@@ -190,9 +190,9 @@ void loop()
     if (gps.frame_received) {
       gps.frame_received = false;
 
-      // This can be susceptible to processing delays; missing an /is_coherent/
+      // This can be susceptible to processing delays; missing an /is_safe/
       // means that some data may not get copied into safe_fix.
-      if (gps.is_coherent()) {
+      if (gps.is_safe()) {
         safe_fix = *const_cast<const gps_fix *>(&gps.fix());
         new_safe_fix = true;
       }

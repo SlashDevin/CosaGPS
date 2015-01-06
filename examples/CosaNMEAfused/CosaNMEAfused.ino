@@ -7,6 +7,7 @@
 #include "Cosa/IOBuffer.hh"
 #include "Cosa/IOStream/Driver/UART.hh"
 #include "Cosa/Power.hh"
+#include "Cosa/RTC.hh"
 
 static IOBuffer<UART::BUFFER_MAX> obuf;
 static IOBuffer<UART::BUFFER_MAX> ibuf;
@@ -78,6 +79,8 @@ static void traceIt()
 
 void setup()
 {
+  RTC::begin();
+
   // Start the normal trace output
   uart.begin(9600);
   trace.begin(&uart, PSTR("CosaNMEAfused: started"));
@@ -96,7 +99,7 @@ void loop()
 {
   static uint32_t last_rx = 0L;
 
-  while (uart1.available())
+  while (uart1.available()) {
     last_rx = RTC::millis();
 
     if (gps.decode( uart1.getchar() ) == NMEAGPS::DECODE_COMPLETED) {
@@ -113,8 +116,6 @@ void loop()
   // Print things out once per second, after the serial input has died down.
   // This prevents input buffer overflow during printing.
 
-  static uint32_t last_sentence = 0L;
-  
   static uint32_t last_trace = 0L;
 
   if ((last_trace != seconds) && (RTC::millis() - last_rx > 5)) {

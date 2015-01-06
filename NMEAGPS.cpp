@@ -76,7 +76,7 @@ void NMEAGPS::rxEnd( bool ok )
     chrCount++;
     parseField(',');
 
-    coherent = true;
+    safe = true;
 #ifdef NMEAGPS_STATS
     statistics.parser_ok++;
 #endif
@@ -129,7 +129,7 @@ NMEAGPS::decode_t NMEAGPS::decode( char c )
                 decode_t cmd_res = parseCommand( c );
                 if (cmd_res == DECODE_COMPLETED) {
                   m_fix.valid.init();
-                  coherent = false;
+                  safe = false;
                 } else if (cmd_res == DECODE_CHR_INVALID) {
                   rxEnd( false );
                 }
@@ -507,8 +507,9 @@ bool NMEAGPS::parseDDMMYY( char chr )
     case 4: m_fix.dateTime.year   = (chr - '0')*10; break;
     case 5: m_fix.dateTime.year  += (chr - '0');    break;
     default:
-      if (chr == ',')
+      if (chr == ',') {
         m_fix.valid.date = true;
+      }
       break;
   }
 #endif

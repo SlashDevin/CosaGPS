@@ -110,8 +110,8 @@ public:
 
         // This is a little dangerous because gps.satellites is volatile.
         // If you need to access the satellites array, be sure to
-        // use one of the mitigation techniques: is_coherent+synchronized or
-        // copy a safe_array.
+        // use one of the mitigation techniques: is_safe+synchronized
+        // (as below) and copy a safe_array.
         uint8_t i_max = merged.satellites;
         if (i_max > NMEAGPS::MAX_SATELLITES)
           i_max = NMEAGPS::MAX_SATELLITES;
@@ -144,10 +144,10 @@ public:
       bool new_safe_fix = false;
 
       // This is susceptible to event processing delays; other kinds of
-      // events may delay getting to /fix/ while it is still coherent.
+      // events may delay getting to /fix/ while it is still safe.
 
       synchronized {
-        if (gps.is_coherent()) {
+        if (gps.is_safe()) {
           safe_fix = *const_cast<const gps_fix *>(&gps.fix());
           new_safe_fix = true;
         }

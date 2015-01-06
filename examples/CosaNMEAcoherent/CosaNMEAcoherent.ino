@@ -7,6 +7,7 @@
 #include "Cosa/IOBuffer.hh"
 #include "Cosa/IOStream/Driver/UART.hh"
 #include "Cosa/Power.hh"
+#include "Cosa/RTC.hh"
 
 static IOBuffer<UART::BUFFER_MAX> obuf;
 static IOBuffer<UART::BUFFER_MAX> ibuf;
@@ -110,9 +111,6 @@ static void sentenceReceived()
 
   if (newInterval) {
 
-    // Log the previous interval
-    traceIt();
-
     //  Since we're into the next time interval, we throw away
     //     all of the previous fix and start with what we
     //     just received.
@@ -131,6 +129,8 @@ static void sentenceReceived()
 
 void setup()
 {
+  RTC::begin();
+
   // Start the normal trace output
   uart.begin(9600);
   trace.begin(&uart, PSTR("CosaNMEAfused: started"));
@@ -147,7 +147,11 @@ void setup()
 
 void loop()
 {
-  while (uart1.available())
+  static uint32_t last_rx = 0L;
+
+  while (uart1.available()) {
+    last_rx = RTC::millis();
+
     if (gps.decode( uart1.getchar() ) == NMEAGPS::DECODE_COMPLETED) {
 
       // All enabled sentence types will be merged into one fix
@@ -157,6 +161,19 @@ void loop()
         //  Use received GPRMC sentence as a pulse
         seconds++;
     }
+  }
+
+  // Print things out once per second, after the serial input has died down.
+  // This prevents input buffer overflow during printing.
+
+  static uint32_t last_trace = 0L;
+
+  if ((last_trace != seconds) && (RTC::millis() - last_rx > 5)) {
+    last_trace = seconds;
+
+    // It's been 5ms since we received anything, log what we have so far...
+    traceIt();
+  }
 
   Power::sleep();
 }
