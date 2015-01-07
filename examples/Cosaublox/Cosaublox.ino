@@ -3,13 +3,14 @@
   uart1 should be connected to the GPS device.
 */
 
-#include "ubxGPS.h"
-
 #include "Cosa/IOBuffer.hh"
 #include "Cosa/IOStream/Driver/UART.hh"
 #include "Cosa/Power.hh"
 #include "Cosa/RTC.hh"
 #include "Cosa/Trace.hh"
+
+#include "ubxGPS.h"
+#include "Streamers.h"
 
 static IOBuffer<UART::BUFFER_MAX> obuf;
 static IOBuffer<UART::BUFFER_MAX> ibuf;
@@ -19,8 +20,6 @@ UART uart1(1, &ibuf, &obuf);
 // uncomment this to display just one pulse-per-day.
 //#define PULSE_PER_DAY
 #endif
-
-static uint32_t seconds = 0L;
 
 //--------------------------
 
@@ -192,6 +191,7 @@ public:
                   trace << PSTR("enable SVINFO failed!\n");
 #endif
 
+                trace_header();
               }
               break;
 
@@ -244,41 +244,8 @@ public:
 
     void traceIt()
     {
-      if ((state == RUNNING) && (last_trace != 0)) {
-
-#if !defined(GPS_FIX_TIME) & !defined(PULSE_PER_DAY)
-        trace << seconds << ',';
-#endif
-
-        trace << merged;
-
-#if defined(NMEAGPS_PARSE_SATELLITES)
-        if (merged.valid.satellites) {
-          trace << ',' << '[';
-
-          uint8_t i_max = merged.satellites;
-          if (i_max > MAX_SATELLITES)
-            i_max = MAX_SATELLITES;
-
-          for (uint8_t i=0; i < i_max; i++) {
-            trace << satellites[i].id;
-#if defined(NMEAGPS_PARSE_SATELLITE_INFO)
-            trace << ' ' << 
-              satellites[i].elevation << '/' << satellites[i].azimuth;
-            trace << '@';
-            if (satellites[i].tracked)
-              trace << satellites[i].snr;
-            else
-              trace << '-';
-#endif
-            trace << ',';
-          }
-          trace << ']';
-        }
-#endif
-
-        trace << '\n';
-      }
+      if ((state == RUNNING) && (last_trace != 0))
+        trace_all( *this, merged );
 
       last_trace = seconds;
 

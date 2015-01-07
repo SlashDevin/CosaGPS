@@ -10,13 +10,12 @@
 #include "Cosa/Power.hh"
 
 #include "NMEAGPS.h"
+#include "Streamers.h"
 
 #if defined(GPS_FIX_DATE) & !defined(GPS_FIX_TIME)
 // uncomment this to display just one pulse-per-day.
 //#define PULSE_PER_DAY
 #endif
-
-static uint32_t seconds = 0L;
 
 extern UART uart1;
 
@@ -171,7 +170,7 @@ void setup()
 {
   // Start the normal trace output
   uart.begin(9600);
-  trace.begin(&uart, PSTR("CosaGPSEvent: started"));
+  trace.begin(&uart, PSTR("CosaNMEAEvent: started"));
   trace << PSTR("fix object size = ") << sizeof(gps_fix) << endl;
   trace << PSTR("GPS object size = ") << sizeof(gps) << endl;
   uart.flush();

@@ -453,8 +453,9 @@ bool NMEAGPS::parseField(char chr)
             case 4:
               if (chr != ',')
                 parseInt( m_fix.dateTime.year, chr );
-              else
+              else {
                 m_fix.valid.date = true;
+              }
               break;
 #endif
           }

@@ -9,13 +9,12 @@
 #include "Cosa/Power.hh"
 
 #include "NMEAGPS.h"
+#include "Streamers.h"
 
 #if defined(GPS_FIX_DATE) & !defined(GPS_FIX_TIME)
 // uncomment this to display just one pulse-per-day.
 //#define PULSE_PER_DAY
 #endif
-
-static uint32_t seconds = 0L;
 
 gps_fix safe_fix;
 

@@ -13,7 +13,9 @@
 
 #include "Cosa/IOStream/Driver/UART.hh"
 #include "Cosa/Trace.hh"
+
 #include "NMEAGPS.h"
+#include "Streamers.h"
 
 /*
  * Make sure gpsfix.h and NMEAGPS.h are configured properly.
@@ -85,7 +87,7 @@ static void traceSample( str_P ptr )
 {
     bool decoded = false;
 
-    trace << PSTR("Input:\n  ") << ptr;
+    trace << PSTR("Input:  ") << ptr;
     char c;
 
     char *p = (char *) ptr;
@@ -100,34 +102,7 @@ static void traceSample( str_P ptr )
     else
       trace << PSTR("Failed to decode!  ");
 
-    trace << gps.fix();
-
-#if defined(NMEAGPS_PARSE_SATELLITES)
-    if (gps.fix().valid.satellites && gps.satellites_valid()) {
-      trace << ',' << '[';
-
-      uint8_t i_max = gps.fix().satellites;
-      if (i_max > NMEAGPS::MAX_SATELLITES)
-        i_max = NMEAGPS::MAX_SATELLITES;
-
-      for (uint8_t i=0; i < i_max; i++) {
-        trace << gps.satellites[i].id;
-#if defined(NMEAGPS_PARSE_SATELLITE_INFO)
-        trace << ' ' << 
-          gps.satellites[i].elevation << '/' << gps.satellites[i].azimuth;
-        trace << '@';
-        if (gps.satellites[i].tracked)
-          trace << gps.satellites[i].snr;
-        else
-          trace << '-';
-#endif
-        trace << ',';
-      }
-      trace << ']';
-    }
-#endif
-
-    trace << '\n';
+    trace_all( gps, gps.fix() );
 }
 
 //--------------------------
@@ -139,7 +114,7 @@ void setup()
 {
   // Start the normal trace output
   uart.begin(9600);
-  trace.begin(&uart, PSTR("CosaNMEAGPS: started"));
+  trace.begin(&uart, PSTR("CosaNMEATtest: started"));
   trace << PSTR("fix object size = ") << sizeof(gps.fix()) << endl;
   trace << PSTR("NMEAGPS object size = ") << sizeof(NMEAGPS) << endl;
   uart.flush();
