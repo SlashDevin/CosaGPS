@@ -233,11 +233,11 @@ void setup()
           failed++;
           break;
         }
-        if ((gps.fix().dateTime.hours != expected.dateTime.hours) ||
+        if ((gps.fix().dateTime.hours   != expected.dateTime.hours  ) ||
             (gps.fix().dateTime.minutes != expected.dateTime.minutes) ||
             (gps.fix().dateTime.seconds != expected.dateTime.seconds) ||
-            (gps.fix().dateTime_cs != expected.dateTime_cs)) {
-          trace << PSTR("FAILED wrong time ") << gps.fix().dateTime << PSTR(".")  << gps.fix().dateTime_cs << PSTR(" != ") << expected.dateTime << PSTR(".") << expected.dateTime_cs << endl;
+            (gps.fix().dateTime_cs      != expected.dateTime_cs)) {
+          trace << PSTR("FAILED wrong time ") << gps.fix().dateTime << '.' << gps.fix().dateTime_cs << PSTR(" != ") << expected.dateTime << '.' << expected.dateTime_cs << endl;
           failed++;
           break;
         }

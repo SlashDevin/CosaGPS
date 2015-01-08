@@ -164,8 +164,8 @@ public:
 #endif
 
 #if defined(GPS_FIX_DATE) | defined(GPS_FIX_TIME)
-  struct time_t dateTime;
-  uint8_t       dateTime_cs; // hundredths of a second
+  time_t  dateTime;
+  uint8_t dateTime_cs; // hundredths of a second
 #endif
 
   /**
@@ -331,7 +331,7 @@ public:
 
 #ifdef GPS_FIX_TIME
       if (r.valid.time) {
-        dateTime.hours = r.dateTime.hours;
+        dateTime.hours   = r.dateTime.hours;
         dateTime.minutes = r.dateTime.minutes;
         dateTime.seconds = r.dateTime.seconds;
         dateTime_cs      = r.dateTime_cs;

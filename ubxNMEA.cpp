@@ -4,13 +4,12 @@
 
 static const char pubx[] __PROGMEM =  "PUBX";
 const char * const ubloxNMEA::ublox_nmea[] __PROGMEM = { pubx };
-const uint8_t ubloxNMEA::ublox_nmea_size = membersof(ublox_nmea);
 
 const NMEAGPS::msg_table_t ubloxNMEA::ublox_msg_table __PROGMEM =
   {
     ubloxNMEA::PUBX_FIRST_MSG,
     &NMEAGPS::nmea_msg_table,
-    ubloxNMEA::ublox_nmea_size,
+    sizeof(ublox_nmea)/sizeof(ublox_nmea[0]),
     ubloxNMEA::ublox_nmea
   };
 
@@ -68,6 +67,7 @@ bool ubloxNMEA::parseFix( char chr )
 
   switch (chrCount) {
     case 0:
+      comma_needed = false;
       if (chr == 'N')
         m_fix.status = gps_fix::STATUS_NONE;
       else if (chr == 'T')
@@ -95,9 +95,10 @@ bool ubloxNMEA::parseFix( char chr )
       break;
   
     default:
-      if (chr == ',')
+      if (chr == ',') {
         m_fix.valid.status = true;
-      else
+        comma_needed       = false;
+      } else
         ok = false;
       break;
   }
