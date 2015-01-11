@@ -124,6 +124,9 @@ The following configuration items are near the top of NMEAGPS.h:
 // optionally, all the info for each satellite.
 #define NMEAGPS_PARSE_SATELLITES
 #define NMEAGPS_PARSE_SATELLITE_INFO
+
+// Enable/disable accumulating fix data across sentences.
+#define NMEAGPS_ACCUMULATE_FIX
 ```
 ####ubloxNMEA
 This derived class has the following configuration items near the top of ubxNMEA.h:
@@ -152,8 +155,8 @@ The compiler will catch any attempt to use parts of a `fix` that have been
 configured out: you will see something like `gps_fix does not have member 
 xxx`.
 
-The compiler **cannot** catch message set dependencies: the `enum 
-nmea_msg_t` is always available.  So even though a `fix` member is enabled, 
+The compiler **cannot** catch message set dependencies: the enum 
+`nmea_msg_t` is always available.  So even though a `fix` member is enabled, 
 you may have disabled all messages that would have set its value.  
 NMEAtest.ino can be used to check some configurations.
 
@@ -169,7 +172,7 @@ satellites, HDOP, GPRMC and GPGGA messages.
 
 **Full**: Nominal plus VDOP, PDOP, lat/lon/alt errors, satellite array with satellite info, and all messages.
 
-(**TinyGPS** uses the **Nominal** configuration.)
+(**TinyGPS** uses the **Nominal** configuration + a second `fix`.)
 
 RAM requirements
 =======
@@ -324,6 +327,15 @@ Tradeoffs
 
 There's a price for everything, hehe...
 
+####Configurability means that the code is littered with #ifdef sections.
+
+I've tried to increase white space and organization to make it more readable, but let's be honest... 
+conditional compilation is ugly.
+
+####Accumulating parts means knowing which parts are valid.
+
+Before accessing a part, you must check its `valid` flag.  Fortunately, this adds only one bit per member.  See GPSfix.cpp for an example of accessing every data member.
+
 ####Parsing without buffers, or *in place*, means that you must be more careful about when you access data items.
 
 In general, you should wait to access the fix until after the entire sentence has been parsed.  Most of the examples simply `decode` until a sentence is COMPLETED, then do all their work with `fix`.  See `loop()` in [NMEA.ino](examples/NMEA.ino). 
@@ -333,14 +345,19 @@ If you need to access the fix at any time, you will have to double-buffer the fi
 `safe_fix`.)  Also, received data errors can cause invalid field values to be set *before* the CRC is fully computed.  The CRC will
 catch most of those, and the fix members will then be marked as invalid.
 
-####Configurability means that the code is littered with #ifdef sections.
+####Accumulating parts into *one* fix means less RAM but more complicated code
 
-I've tried to increase white space and organization to make it more readable, but let's be honest... 
-conditional compilation is ugly.
+By enabling `NMEAGPS_ACCUMULATE_FIX`, the fix will accumulate data from all received sentences.  Each
+fix member will contain the last value received from any sentence that
+contains that information.  While it avoids the need for a second copy of the merged fix, it has several restrictions:
+* Fix members can only be accessed while it `is_safe()`.  There is no double-buffered fix.
+* Fix members may contain information from different time intervals (i.e., they are not 
+coherent).  It is possible to acheive coherency if the `fix` is re-initialzed at the correct time.
+* All fix members may be invalidated if a received sentence is rejected for any reason (e.g., CRC
+error).  No members will be valid until new sentences are received, parsed, accepted and *safe*.  Your application
+must accommodate possible gaps in fix availability.
 
-####Accumulating parts of a fix into group means knowing which parts are valid.
-
-Before accessing a part, you must check its `valid` flag.  Fortunately, this adds only one bit per member.  See GPSfix.cpp for an example of accessing every data member.
+You are not restricted from having other instances of fix; you can copy or merge the accumulating fix into another copy if you want.  This is just a way to minimize RAM requirements and still have a fused fix.
 
 ####Correlating timestamps for coherency means extra date/time comparisons for each sentence before it is fused.
 
