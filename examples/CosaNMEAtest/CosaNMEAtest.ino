@@ -90,6 +90,7 @@ static void traceSample( str_P ptr )
     trace << PSTR("Input:  ") << ptr;
     char c;
 
+    gps.fix().init();
     char *p = (char *) ptr;
     while ( c = pgm_read_byte( p++ ) ) {
       if (NMEAGPS::DECODE_COMPLETED == gps.decode( c )) {
@@ -103,6 +104,7 @@ static void traceSample( str_P ptr )
       trace << PSTR("Failed to decode!  ");
 
     trace_all( gps, gps.fix() );
+    trace << '\n';
 }
 
 //--------------------------
@@ -286,7 +288,15 @@ void loop()
   if (failed) {
     trace << PSTR("FAILED ") << failed << PSTR(" tests.\n");
   } else {
-    trace << PSTR("------ Samples ------\n");
+    trace << PSTR("------ Samples ------\nResults format:\n  ");
+    trace_header();
+    trace << '\n';
+
+#ifdef NMEAGPS_STATS
+    gps.statistics.ok         = 0L;
+    gps.statistics.crc_errors = 0L;
+#endif
+
     traceSample( (str_P) validGGA );
     traceSample( (str_P) validRMC );
     traceSample( (str_P) mtk1 );
