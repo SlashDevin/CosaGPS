@@ -53,7 +53,7 @@ public:
       return c;
     };
 
-    const volatile gps_fix & fix() const { return gps.fix(); };
+    const volatile gps_fix & fix() { return gps.fix(); };
 
     bool is_safe() const { return gps.is_safe(); }
     void poll( IOStream::Device *device, NMEAGPS::nmea_msg_t msg ) const

@@ -151,7 +151,7 @@ protected:
 
 #if defined( GPS_FIX_LAT_ERR ) | defined( GPS_FIX_LON_ERR ) | \
     defined( GPS_FIX_ALT_ERR )
-    // Well, crud.  The NAV_SVINFO message has 4-byte received errors in mm.
+    // Well, crud.  The NAV_POSLLH message has 4-byte received errors in mm.
     // These must be converted to the 2-byte gps_fix errors in cm.
     // There's no easy way to perform this conversion as the bytes are
     // being received, especially when the LSB is received first.
@@ -277,9 +277,9 @@ private:
 
     bool parseFix( uint8_t c );
 
-#if defined(GPS_FIX_TIME) & defined(GPS_FIX_DATE)
     bool parseTOW( uint8_t chr )
     {
+#if defined(GPS_FIX_TIME) & defined(GPS_FIX_DATE)
       if (chrCount == 0) {
         m_fix.valid.date =
         m_fix.valid.time = false;
@@ -297,9 +297,11 @@ private:
           m_fix.dateTime = (clock_t) 0L;
 //trace << PSTR(".") << m_fix.dateTime_cs;
       }
+#endif
+
       return true;
     }
-#endif
+
 } __attribute__((packed));
 
 #endif

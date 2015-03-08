@@ -86,23 +86,31 @@ void NMEAGPS::sentenceOk()
 #endif
 }
 
-
+/**
+ * There was something wrong with the sentence.
+ */
 void NMEAGPS::sentenceInvalid()
 {
   rxState = NMEA_IDLE;
 
-  // There was something wrong with the sentence,
-  // all the values are suspect.  Start over.
+  // All the values are suspect.  Start over.
   m_fix.valid.init();
   nmeaMessage = NMEA_UNKNOWN;
 }
 
+/**
+ *  The sentence is well-formed, but is an unrecognized type
+ */
 
 void NMEAGPS::sentenceUnrecognized()
 {
   rxState     = NMEA_IDLE;
   nmeaMessage = NMEA_UNKNOWN;
 }
+
+/**
+ * Process one character of an NMEA GPS sentence. 
+ */
 
 NMEAGPS::decode_t NMEAGPS::decode( char c )
 {
@@ -242,9 +250,11 @@ NMEAGPS::decode_t NMEAGPS::parseCommand( char c )
     else if ((msg_offset <= nmeaMessage) && (nmeaMessage < msg_offset+table_size))
       // In range of this table, pick up where we left off
       entry = nmeaMessage - msg_offset;
+#ifdef NMEAGPS_DERIVED_TYPES
     else
       // Try the next table
       check_this_table = false;
+#endif
 
     if (check_this_table) {
       uint8_t i = entry;
@@ -426,9 +436,11 @@ bool NMEAGPS::parseField(char chr)
                         sat_count++; // field 3 can be omitted, increment now
                       break;
                     case 3:
-                      if (chr != ',')
-                        parseInt( satellites[sat_count-1].snr, chr );
-                      else
+                      if (chr != ',') {
+                        uint8_t snr = satellites[sat_count-1].snr;
+                        parseInt( snr, chr );
+                        satellites[sat_count-1].snr = snr;
+                      } else
                         satellites[sat_count-1].tracked = (chrCount != 0);
                       break;
 #else
@@ -548,6 +560,7 @@ bool NMEAGPS::parseDDMMYY( char chr )
 bool NMEAGPS::parseFix( char chr )
 {
   if (chrCount == 0) {
+    NMEAGPS_INVALIDATE( status );
     bool ok = true;
     if ((chr == '1') || (chr == 'A'))
       m_fix.status = gps_fix::STATUS_STD;
@@ -634,11 +647,13 @@ bool NMEAGPS::parseFloat( uint16_t & val, char chr, uint8_t max_decimal )
 
 //---------------------------------
 
+/**
+ * Parse lat/lon dddmm.mmmm fields
+ */
+
 bool NMEAGPS::parseDDDMM( int32_t & val, char chr )
 {
 #ifdef GPS_FIX_LOCATION
-
-  // parse lat/lon dddmm.mmmm fields
 
   if (chrCount == 0) {
     val          = 0;
@@ -812,7 +827,7 @@ bool NMEAGPS::parsePDOP( char chr )
 
 bool NMEAGPS::parse_lat_err( char chr )
 {
-#ifdef GPS_FIX_lat_ERR
+#ifdef GPS_FIX_LAT_ERR
   if (chrCount == 0)
     NMEAGPS_INVALIDATE( lat_err );
   if (parseFloat( m_fix.lat_err_cm, chr, 2 ))
@@ -823,7 +838,7 @@ bool NMEAGPS::parse_lat_err( char chr )
 
 bool NMEAGPS::parse_lon_err( char chr )
 {
-#ifdef GPS_FIX_lon_ERR
+#ifdef GPS_FIX_LON_ERR
   if (chrCount == 0)
     NMEAGPS_INVALIDATE( lon_err );
   if (parseFloat( m_fix.lon_err_cm, chr, 2 ))
@@ -834,7 +849,7 @@ bool NMEAGPS::parse_lon_err( char chr )
 
 bool NMEAGPS::parse_alt_err( char chr )
 {
-#ifdef GPS_FIX_alt_ERR
+#ifdef GPS_FIX_ALT_ERR
   if (chrCount == 0)
     NMEAGPS_INVALIDATE( alt_err );
   if (parseFloat( m_fix.alt_err_cm, chr, 2 ))
