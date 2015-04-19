@@ -54,6 +54,7 @@ class ubloxGPS : public ubloxNMEA
 
 public:
 
+    // Constructor needs to know the device to handle the UBX binary protocol
     ubloxGPS( IOStream::Device *device )
       :
         storage( (ublox::msg_t *) NULL ),
@@ -147,6 +148,9 @@ public:
       return send( poll_msg, reply_msg );
     };
 
+    //  Return the Stream that was passed into the constructor.
+    IOStream::Device *Device() const { return (IOStream::Device *)m_device; };
+
 protected:
 
 #if defined( GPS_FIX_LAT_ERR ) | defined( GPS_FIX_LON_ERR ) | \
@@ -235,13 +239,13 @@ private:
     ublox::msg_t   *reply;
 
     struct {
-      bool     reply_expected:1;
-      bool     reply_received:1;
-      bool     ack_expected:1;
-      bool     ack_received:1;
-      bool     nak_received:1;
-      bool     ack_same_as_sent:1;
-    } __attribute__((packed));
+      bool     reply_expected NEOGPS_BF(1);
+      bool     reply_received NEOGPS_BF(1);
+      bool     ack_expected NEOGPS_BF(1);
+      bool     ack_received NEOGPS_BF(1);
+      bool     nak_received NEOGPS_BF(1);
+      bool     ack_same_as_sent NEOGPS_BF(1);
+    } NEOGPS_PACKED;
     struct ublox::msg_hdr_t sent;
 
     struct rx_msg_t : ublox::msg_t
@@ -263,7 +267,7 @@ private:
         crc_b = 0;
       }
 
-    } __attribute__((packed));
+    } NEOGPS_PACKED;
 
     rx_msg_t m_rx_msg;
 
@@ -302,6 +306,6 @@ private:
       return true;
     }
 
-} __attribute__((packed));
+} NEOGPS_PACKED;
 
 #endif

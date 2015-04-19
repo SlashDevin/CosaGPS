@@ -34,7 +34,7 @@ public:
         GETTING_UTC, 
         RUNNING
       }
-        state:8;
+        state NEOGPS_BF(8);
 
     uint32_t last_rx;
     uint32_t last_trace;
@@ -66,9 +66,9 @@ public:
     {
       bool rx = false;
 
-      while (uart1.available()) {
+      while (Device()->available()) {
         rx = true;
-        if (decode( uart1.getchar() ) == DECODE_COMPLETED) {
+        if (decode( Device()->getchar() ) == DECODE_COMPLETED) {
           if (ok_to_process)
             processSentence();
         }
@@ -103,18 +103,18 @@ public:
       if (fix().status == gps_fix::STATUS_NONE) {
         if (!acquiring) {
           acquiring = true;
-          trace << F("Acquiring...");
+          trace << PSTR("Acquiring...");
         } else
           trace << '.';
 
       } else {
         if (acquiring)
           trace << '\n';
-        trace << F("Acquired status: ") << (uint8_t) fix().status << '\n';
+        trace << PSTR("Acquired status: ") << (uint8_t) fix().status << '\n';
 
 #if defined(GPS_FIX_TIME) & defined(GPS_FIX_DATE) & defined(UBLOX_PARSE_TIMEGPS)
         if (!enable_msg( ublox::UBX_NAV, ublox::UBX_NAV_TIMEGPS ))
-          trace << F("enable TIMEGPS failed!\n");
+          trace << PSTR("enable TIMEGPS failed!\n");
 
         state = GETTING_LEAP_SECONDS;
 #else
@@ -130,14 +130,14 @@ public:
     {
 #if defined(GPS_FIX_TIME) & defined(GPS_FIX_DATE) & defined(UBLOX_PARSE_TIMEGPS)
         if (GPSTime::leap_seconds != 0) {
-          trace << F("Acquired leap seconds: ") << GPSTime::leap_seconds << '\n';
+          trace << PSTR("Acquired leap seconds: ") << GPSTime::leap_seconds << '\n';
 
           if (!disable_msg( ublox::UBX_NAV, ublox::UBX_NAV_TIMEGPS ))
-            trace << F("disable TIMEGPS failed!\n");
+            trace << PSTR("disable TIMEGPS failed!\n");
 
 #if defined(UBLOX_PARSE_TIMEUTC)
           if (!enable_msg( ublox::UBX_NAV, ublox::UBX_NAV_TIMEUTC ))
-            trace << F("enable TIMEUTC failed!\n");
+            trace << PSTR("enable TIMEUTC failed!\n");
           state = GETTING_UTC;
 #else
           start_running();
@@ -152,8 +152,8 @@ public:
     {
 #if defined(GPS_FIX_TIME) & defined(GPS_FIX_DATE) & defined(UBLOX_PARSE_TIMEUTC)
         if (GPSTime::start_of_week() != 0) {
-          trace << F("Acquired UTC: ") << fix().dateTime << '\n';
-          trace << F("Acquired Start-of-Week: ") << GPSTime::start_of_week() << '\n';
+          trace << PSTR("Acquired UTC: ") << fix().dateTime << '\n';
+          trace << PSTR("Acquired Start-of-Week: ") << GPSTime::start_of_week() << '\n';
 
           start_running();
         }
@@ -191,13 +191,13 @@ public:
 #if defined(GPS_FIX_TIME) & defined(GPS_FIX_DATE)
         if (enabled_msg_with_time &&
             !disable_msg( ublox::UBX_NAV, ublox::UBX_NAV_TIMEUTC ))
-          trace << F("disable TIMEUTC failed!\n");
+          trace << PSTR("disable TIMEUTC failed!\n");
 
 #elif defined(GPS_FIX_TIME) | defined(GPS_FIX_DATE)
         // If both aren't defined, we can't convert TOW to UTC,
         // so ask for the separate UTC message.
         if (!enable_msg( ublox::UBX_NAV, ublox::UBX_NAV_TIMEUTC ))
-          trace << F("enable TIMEUTC failed!\n");
+          trace << PSTR("enable TIMEUTC failed!\n");
 #endif
 #endif
         state = RUNNING;
@@ -298,8 +298,9 @@ public:
     } // traceIt
 
 
-} __attribute__((packed));
+} NEOGPS_PACKED;
 
+// Construct the GPS object and hook it to the appropriate serial device
 static MyGPS gps( &uart1 );
 
 //--------------------------
@@ -310,7 +311,7 @@ void setup()
 
   // Start the normal trace output
   uart.begin(9600);
-  trace.begin(&uart, PSTR("CosaUBXGPS: started"));
+  trace.begin(&uart, PSTR("Cosaublox: started"));
   trace << PSTR("fix object size = ") << sizeof(gps.fix()) << endl;
   trace << PSTR("ubloxGPS object size = ") << sizeof(ubloxGPS) << endl;
   trace << PSTR("MyGPS object size = ") << sizeof(gps) << endl;
@@ -336,7 +337,7 @@ void setup()
   gps.disable_msg( ublox::UBX_NAV, ublox::UBX_NAV_POSLLH );
 
 #if 0
-  // Test a Neo M8 message -- should be rejected
+  // Test a Neo M8 message -- should be rejected by Neo-6 and Neo7
   ublox::cfg_nmea_v1_t test;
 
   test.always_output_pos  = false; // invalid or failed

@@ -22,105 +22,7 @@
 #include <avr/pgmspace.h>
 
 #include "GPSfix.h"
-
-//------------------------------------------------------
-// Enable/disable the parsing of specific sentences.
-//
-// Configuring out a sentence prevents its fields from being parsed.
-// However, the sentence type will still be recognized by /decode/ and 
-// stored in member /nmeaMessage/.  No valid flags would be available.
-//
-// Only RMC and ZDA contain date information.  Other
-// sentences contain time information.  Both date and time are 
-// required if you will be doing time_t-to-clock_t operations.
-
-#define NMEAGPS_PARSE_GGA
-//#define NMEAGPS_PARSE_GLL
-//#define NMEAGPS_PARSE_GSA
-//#define NMEAGPS_PARSE_GSV
-//#define NMEAGPS_PARSE_GST
-#define NMEAGPS_PARSE_RMC
-//#define NMEAGPS_PARSE_VTG
-//#define NMEAGPS_PARSE_ZDA
-
-//------------------------------------------------------
-// Enable/disable tracking the current satellite array and,
-// optionally, all the info for each satellite.
-//
-
-//#define NMEAGPS_PARSE_SATELLITES
-//#define NMEAGPS_PARSE_SATELLITE_INFO
-
-#ifdef NMEAGPS_PARSE_SATELLITES
-#ifndef GPS_FIX_SATELLITES
-#error GPS_FIX_SATELLITES must be defined in GPSfix.h!
-#endif
-#endif
-
-#if defined(NMEAGPS_PARSE_SATELLITE_INFO) & \
-    !defined(NMEAGPS_PARSE_SATELLITES)
-#error NMEAGPS_PARSE_SATELLITES must be defined!
-#endif
-
-//------------------------------------------------------
-// Enable/disable accumulating fix data across sentences.
-//
-// If not defined, the fix will contain data from only the last decoded sentence.
-//
-// If defined, the fix will contain data from all received sentences.  Each
-// fix member will contain the last value received from any sentence that
-// contains that information.  This means that fix members may contain
-// information from different time intervals (i.e., they are not coherent).
-//
-// ALSO NOTE:  If a received sentence is rejected for any reason (e.g., CRC
-//   error), all the values are suspect.  The fix will be cleared; no members
-//   will be valid until new sentences are received and accepted.
-//
-//   This is an application tradeoff between keeping a merged copy of received
-//   fix data (more RAM) vs. accommodating "gaps" in fix data (more code).
-//
-// SEE ALSO: NMEAfused.ino and NMEAcoherent.ino
-
-#define NMEAGPS_ACCUMULATE_FIX
-
-#ifdef NMEAGPS_ACCUMULATE_FIX
-
-// When accumulating, nothing is done to the fix at the beginning of every sentence
-#define NMEAGPS_INIT_FIX(m)
-
-// ...but we invalidate one part when it starts to get parsed.  It *may* get
-// validated when the parsing is finished.
-#define NMEAGPS_INVALIDATE(m) m_fix.valid.m = false
-
-#else
-
-// When NOT accumulating, invalidate the entire fix at the beginning of every sentence
-#define NMEAGPS_INIT_FIX(m) m.valid.init()
-
-// ...so the individual parts do not need to be invalidated as they are parsed
-#define NMEAGPS_INVALIDATE(m)
-
-#endif
-
-
-//------------------------------------------------------
-// Enable/disable gathering interface statistics:
-// CRC errors and number of sentences received
-//
-#define NMEAGPS_STATS
-
-//------------------------------------------------------
-// Configuration item for allowing derived types of NMEAGPS.
-// If you derive classes from NMEAGPS, you *must* define NMEAGPS_DERIVED_TYPES.
-// If not defined, virtuals are not used, with a slight size (2 bytes) and 
-// execution time savings.
-//
-#define NMEAGPS_DERIVED_TYPES
-#ifdef NMEAGPS_DERIVED_TYPES
-#define NMEAGPS_VIRTUAL virtual
-#else
-#define NMEAGPS_VIRTUAL
-#endif
+#include "NMEAGPS_cfg.h"
 
 //------------------------------------------------------
 //
@@ -129,7 +31,7 @@
 // of the current /fix/.
 //
 // @section Limitations
-// 1) Only NMEA messages of types are parsed:
+// 1) Only these NMEA messages are parsed:
 //      GGA, GLL, GSA, GST, GSV, RMC, VTG, and ZDA.
 // 2) The current `fix` is only safe to access _after_ the complete message 
 // is parsed and _before_ the next message begins to affect the members. 
@@ -143,66 +45,11 @@ class NMEAGPS
     NMEAGPS( const NMEAGPS & );
 
 public:
-    /** NMEA standard message types. */
-    enum nmea_msg_t {
-        NMEA_UNKNOWN,
-        NMEA_GGA,
-        NMEA_GLL,
-        NMEA_GSA,
-        NMEA_GST,
-        NMEA_GSV,
-        NMEA_RMC,
-        NMEA_VTG,
-        NMEA_ZDA,
-    };
-    static const nmea_msg_t NMEA_FIRST_MSG = NMEA_GGA;
-    static const nmea_msg_t NMEA_LAST_MSG  = NMEA_ZDA;
-
-protected:
-    //  Current fix
-    gps_fix m_fix;
-
-    /**
-     * Current parser state
-     */
-    uint8_t      crc;            // accumulated CRC in the sentence
-    uint8_t      fieldIndex;     // index of current field in the sentence
-    uint8_t      chrCount;       // index of current character in current field
-    uint8_t      decimal;        // digits received after the decimal point
-    struct {
-      bool       negative    :1; // field had a leading '-'
-      bool       safe        :1; // fix is safe to access
-      bool       comma_needed:1; // field needs a comma to finish parsing
-      bool       group_valid :1; // multi-field group valid
-    } __attribute__((packed));
-
-    /*
-     * Internal FSM states
-     */
-    enum rxState_t {
-        NMEA_IDLE,           // Waiting for initial '$'
-        NMEA_RECEIVING_DATA, // Parsing fields up to the terminating '*'
-        NMEA_RECEIVING_CRC   // Receiving two-byte transmitted CRC
-    };
-    static const uint8_t NMEA_FIRST_STATE = NMEA_IDLE;
-    static const uint8_t NMEA_LAST_STATE  = NMEA_RECEIVING_CRC;
-
-    rxState_t rxState:8;
-
-public:
 
     /**
      * Constructor
      */
-    NMEAGPS()
-    {
-#ifdef NMEAGPS_STATS
-      statistics.ok         = 0;
-      statistics.crc_errors = 0;
-#endif
-      rxState               = NMEA_IDLE;
-      safe                  = true;
-    };
+    NMEAGPS();
 
     /**
      * Return type for /decode/.  As bytes are processed, they can be
@@ -220,11 +67,34 @@ public:
      */
     NMEAGPS_VIRTUAL decode_t decode( char c );
 
+    /** NMEA standard message types. */
+    enum nmea_msg_t {
+        NMEA_UNKNOWN,
+        NMEA_GGA,
+        NMEA_GLL,
+        NMEA_GSA,
+        NMEA_GST,
+        NMEA_GSV,
+        NMEA_RMC,
+        NMEA_VTG,
+        NMEA_ZDA,
+    };
+    static const nmea_msg_t NMEA_FIRST_MSG = NMEA_GGA;
+    static const nmea_msg_t NMEA_LAST_MSG  = NMEA_ZDA;
+
     /**
      * Most recent NMEA sentence type received.
      */
-    enum nmea_msg_t nmeaMessage:8;
+    enum nmea_msg_t nmeaMessage NEOGPS_BF(8);
     
+#ifdef NMEAGPS_SAVE_TALKER_ID
+    char talker_id[2];
+#endif
+
+#ifdef NMEAGPS_SAVE_MFR_ID
+    char mfr_id[3];
+#endif
+
     //  Current fix accessor.
     //  /fix/ will be constantly changing as characters are received.
     //  For example, fix().longitude() may return nonsense data if
@@ -266,7 +136,7 @@ public:
 
 #ifdef NMEAGPS_STATS
     /**
-     * Internal GPS parser statistics.
+     * Statistics.
      */
     struct {
         uint32_t ok;         // count of successfully parsed sentences
@@ -288,22 +158,46 @@ public:
     static void send( IOStream::Device *device, const char *msg );
     static void send( IOStream::Device *device, str_P msg );
 
-private:
-    void sentenceBegin       ();
-    void sentenceOk          ();
-    void sentenceInvalid     ();
-    void sentenceUnrecognized();
-
 protected:
+    //  Current fix
+    gps_fix m_fix;
+
+    /**
+     * Current parser state
+     */
+    uint8_t      crc;            // accumulated CRC in the sentence
+    uint8_t      fieldIndex;     // index of current field in the sentence
+    uint8_t      chrCount;       // index of current character in current field
+    uint8_t      decimal;        // digits received after the decimal point
+    struct {
+      bool       negative     NEOGPS_BF(1); // field had a leading '-'
+      bool       safe         NEOGPS_BF(1); // fix is safe to access
+      bool       comma_needed NEOGPS_BF(1); // field needs a comma to finish parsing
+      bool       group_valid  NEOGPS_BF(1); // multi-field group valid
+      bool       proprietary  NEOGPS_BF(1); // receiving proprietary message
+    } NEOGPS_PACKED;
+
+    /*
+     * Internal FSM states
+     */
+    enum rxState_t {
+        NMEA_IDLE,             // Waiting for initial '$'
+        NMEA_RECEIVING_HEADER, // Parsing sentence type field
+        NMEA_RECEIVING_DATA,   // Parsing fields up to the terminating '*'
+        NMEA_RECEIVING_CRC     // Receiving two-byte transmitted CRC
+    };
+    static const uint8_t NMEA_FIRST_STATE = NMEA_IDLE;
+    static const uint8_t NMEA_LAST_STATE  = NMEA_RECEIVING_CRC;
+
+    rxState_t rxState NEOGPS_BF(8);
+
     /*
      * Table entry for NMEA sentence type string and its offset
      * in enumerated nmea_msg_t.  Proprietary sentences can be implemented
      * in derived classes by adding a second table.  Additional tables
      * can be singly-linked through the /previous/ member.  The instantiated
      * class's table is the head, and should be returned by the derived
-     * /msg_table/ function.  Tables should be sorted by the commonality
-     * of the starting characters: alphabetical would work but is not strictly
-     * required.
+     * /msg_table/ function.  Tables should be sorted alphabetically.
      */
     struct msg_table_t {
       uint8_t             offset;  // nmea_msg_t enum starting value
@@ -316,6 +210,14 @@ protected:
 
     NMEAGPS_VIRTUAL const msg_table_t *msg_table() const
       { return &nmea_msg_table; };
+
+#ifdef NMEAGPS_PARSE_TALKER_ID
+    NMEAGPS_VIRTUAL bool parseTalkerID( char chr ) { return true; };
+#endif
+
+#ifdef NMEAGPS_PARSE_MFR_ID
+    NMEAGPS_VIRTUAL bool parseMfrID( char chr ) { return true; };
+#endif
 
     /*
      * Use the list of tables to recognize an NMEA sentence type.
@@ -365,13 +267,12 @@ public:
 #ifdef NMEAGPS_PARSE_SATELLITE_INFO
       uint8_t  elevation; // 0..99 deg
       uint16_t azimuth;   // 0..359 deg
-      uint8_t  snr    :7; // 0..99 dBHz
-      bool     tracked:1;
+      uint8_t  snr     NEOGPS_BF(7); // 0..99 dBHz
+      bool     tracked NEOGPS_BF(1);
 #endif
-    } __attribute__((packed));
+    } NEOGPS_PACKED;
 
-    static const uint8_t MAX_SATELLITES = 20;
-    satellite_view_t satellites[ MAX_SATELLITES ];
+    satellite_view_t satellites[ NMEAGPS_MAX_SATELLITES ];
     uint8_t sat_count;
 
     bool satellites_valid() const { return (sat_count >= m_fix.satellites); }
@@ -427,6 +328,13 @@ protected:
         val = (val*10) + (chr - '0');
       return true;
     }
+
+private:
+    void sentenceBegin       ();
+    void sentenceOk          ();
+    void sentenceInvalid     ();
+    void sentenceUnrecognized();
+    void headerReceived      ();
 
 } __attribute__((packed));
 

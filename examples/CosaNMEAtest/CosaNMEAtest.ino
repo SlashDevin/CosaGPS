@@ -65,9 +65,31 @@ static NMEAGPS gps;
 const char validGGA[] __PROGMEM =
   "$GPGGA,092725.00,4717.11399,N,00833.91590,E,"
     "1,8,1.01,499.6,M,48.0,M,,0*5B\r\n";
+
+// Ayers Rock
+//  -25.3448688,131.0324914
+//  2520.692128,S,13101.949484,E
 const char validRMC[] __PROGMEM =
-  "$GPRMC,092725.00,A,4717.11437,N,00833.91522,E,"
-    "0.004,77.52,091202,,,A*5E\r\n";
+  "$GPRMC,092725.00,A,2520.69213,S,13101.94948,E,"
+    "0.004,77.52,091202,,,A*43\r\n";
+
+// Macchu Picchu
+//  -13.162805, -72.545508
+//  13.162805,S,72.545508,W
+//  1309.7683,S,7232.7305,W
+
+const char validGGA2[] __PROGMEM =
+  "$GPGGA,162254.00,1309.7683,S,7232.7305,W,"
+    "1,03,2.36,2430.2,M,-25.6,M,,*7E\r\n";
+
+// Dexter MO
+//  36.794405, -89.958655
+//  36.794405,N,89.958655,W
+//  3647.6643,N,8957.5193,W
+
+const char validRMC2[] __PROGMEM =
+  "$GPRMC,162254.00,A,3647.6643,N,8957.5193,W,0.820,188.36,110706,,,A*49\r\n";
+
 const char mtk1[] __PROGMEM =
 "$GPGGA,064951.000,2307.1256,N,12016.4438,E,1,8,0.95,39.9,M,17.8,M,,*63\r\n";
 const char mtk2[] __PROGMEM =
@@ -82,6 +104,12 @@ const char mtk6[] __PROGMEM =
 "$GPGSV,3,2,09,18,26,314,40,09,57,170,44,06,20,229,37,10,26,084,37*77\r\n";
 const char mtk7[] __PROGMEM =
 "$GPGSV,3,3,09,07,,,26*73\r\n";
+const char mtk8[] __PROGMEM =
+"$GNGST,082356.00,1.8,,,,1.7,1.3,2.2*60\r\n";
+const char mtk9[] __PROGMEM =
+"$GNRMC,083559.00,A,4717.11437,N,00833.91522,E,0.004,77.52,091202,,,A,V*33\r\n";
+const char mtk10[] __PROGMEM =
+"$GNGGA,092725.00,4717.11399,N,00833.91590,E,1,08,1.01,499.6,M,48.0,M,,*45\r\n";
 
 const char fpGGA1[] __PROGMEM = "$GPGGA,092725.00,3242.9000,N,11705.8169,W,"
   "1,8,1.01,499.6,M,48.0,M,,0*49\r\n";
@@ -109,7 +137,7 @@ static bool parse_P( str_P ptr )
 
     gps.fix().init();
     char *p = (char *) ptr;
-    while ( c = pgm_read_byte( p++ ) ) {
+    while ( (c = pgm_read_byte( p++ )) != '\0' ) {
       if (NMEAGPS::DECODE_COMPLETED == gps.decode( c )) {
         decoded = true;
       }
@@ -139,6 +167,48 @@ static void traceSample( str_P ptr )
 
 static uint8_t passed = 0;
 static uint8_t failed = 0;
+
+static void checkLatLon
+  ( str_P msg, NMEAGPS::nmea_msg_t msg_type, int32_t lat, int32_t lon )
+{
+  const char *ptr = (const char *) msg;
+  for (;;) {
+    char c = pgm_read_byte( ptr++ );
+    if (!c) {
+      trace << PSTR("FAILED to parse \"");
+      trace << msg;
+      trace << PSTR("\"\n");
+      failed++;
+      break;
+    }
+    if (NMEAGPS::DECODE_COMPLETED == gps.decode( c )) {
+
+      if (gps.nmeaMessage != msg_type) {
+        trace << PSTR("FAILED wrong message type ");
+        trace << (uint8_t) gps.nmeaMessage;
+        failed++;
+        break;
+      }
+      if (gps.fix().latitudeL() != lat) {
+        trace << PSTR("FAILED wrong latitude ");
+        trace << gps.fix().latitudeL();
+        failed++;
+        break;
+      }
+      if (gps.fix().longitudeL() != lon) {
+        trace << PSTR("FAILED wrong longitude ");
+        trace << gps.fix().longitudeL();
+        failed++;
+        break;
+      }
+
+      passed++;
+      break;
+    }
+  }
+} // checkLatLon
+
+//--------------------------
 
 void setup()
 {
@@ -171,10 +241,10 @@ void setup()
   }
   passed++;
 
-  uint8_t validGGA_len = 0;
+  uint16_t validGGA_len = 0;
 
   // Insert a ' ' at each position of the test sentence
-  uint16_t insert_at=1;
+  uint16_t insert_at = 1;
   do {
     const char *ptr = validGGA;
     uint8_t j = 0;
@@ -271,12 +341,12 @@ void setup()
           failed++;
           break;
         }
-        if (gps.fix().latitudeL() != 472852332) {
+        if (gps.fix().latitudeL() != 472852332L) {
           trace << PSTR("FAILED wrong latitude ") << gps.fix().latitudeL() << endl;
           failed++;
           break;
         }
-        if (gps.fix().longitudeL() != 85652650) {
+        if (gps.fix().longitudeL() != 85652650L) {
           trace << PSTR("FAILED wrong longitude ") << gps.fix().longitudeL() << endl;
           failed++;
           break;
@@ -306,6 +376,10 @@ void setup()
     }
   }
   passed++;
+
+  checkLatLon( (str_P) validRMC , NMEAGPS::NMEA_RMC, -253448688L, 1310324913L );
+  checkLatLon( (str_P) validGGA2, NMEAGPS::NMEA_GGA, -131628050L, -725455083L );
+  checkLatLon( (str_P) validRMC2, NMEAGPS::NMEA_RMC,  367944050L, -899586550L );
 }
 
 //--------------------------
@@ -334,6 +408,9 @@ void loop()
     traceSample( (str_P) mtk5 );
     traceSample( (str_P) mtk6 );
     traceSample( (str_P) mtk7 );
+    traceSample( (str_P) mtk8 );
+    traceSample( (str_P) mtk9 );
+    traceSample( (str_P) mtk10 );
 
     /**
      * This next section displays incremental longitudes.

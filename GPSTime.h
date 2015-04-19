@@ -28,10 +28,10 @@ public:
         now.set_day();
         s_start_of_week =
           (clock_t) now  -  
-          (clock_t) ((((now.day-1)*24L + 
-                       now.hours)*60L + 
-                       now.minutes)*60L +
-                       now.seconds);
+          (clock_t) ((((now.day-1  ) * 24L + 
+                        now.hours  ) * 60L + 
+                        now.minutes) * 60L +
+                        now.seconds);
       }
 
     static clock_t start_of_week()

@@ -22,34 +22,8 @@
 // Include core libraries
 #include "Cosa/Time.hh"
 
-/**
- * Enable/disable the storage for the members of a fix.
- *
- * Disabling a member prevents it from being parsed from a received message.
- * The disabled member cannot be accessed or stored, and its validity flag 
- * would not be available.  It will not be declared, and code that uses that
- * member will not compile.
- *
- * DATE and TIME are somewhat coupled in that they share a single `time_t`,
- * but they have separate validity flags.
- *
- * See also note regarding the DOP members, below.
- *
- */
-
-#define GPS_FIX_DATE
-#define GPS_FIX_TIME
-#define GPS_FIX_LOCATION
-#define GPS_FIX_ALTITUDE
-#define GPS_FIX_SPEED
-#define GPS_FIX_HEADING
-#define GPS_FIX_SATELLITES
-#define GPS_FIX_HDOP
-//#define GPS_FIX_VDOP
-//#define GPS_FIX_PDOP
-//#define GPS_FIX_LAT_ERR
-//#define GPS_FIX_LON_ERR
-//#define GPS_FIX_ALT_ERR
+#include "NeoGPS_cfg.h"
+#include "GPSfix_cfg.h"
 
 /**
  * A structure for holding a GPS fix: time, position, velocity, etc.
@@ -89,7 +63,7 @@ public:
     int32_t int32_000() const { return whole * 1000L + frac; };
     float float_00() const { return ((float)whole) + ((float)frac)*0.01; };
     float float_000() const { return ((float)whole) + ((float)frac)*0.001; };
-  } __attribute__((packed));
+  } NEOGPS_PACKED;
 
 #ifdef GPS_FIX_LOCATION
     int32_t       lat;  // degrees * 1e7, negative is South
@@ -182,61 +156,61 @@ public:
     STATUS_DGPS
   };
 
-  status_t  status:8;
+  status_t  status NEOGPS_BF(8);
 
   //  Flags to indicate which members of this fix are valid.
 
   struct valid_t {
-    bool status:1;
+    bool status NEOGPS_BF(1);
 
 #if defined(GPS_FIX_DATE)
-    bool date:1;
+    bool date NEOGPS_BF(1);
 #endif
 
 #if defined(GPS_FIX_TIME)
-    bool time:1;
+    bool time NEOGPS_BF(1);
 #endif
 
 #ifdef GPS_FIX_LOCATION
-    bool location:1;
+    bool location NEOGPS_BF(1);
 #endif
 
 #ifdef GPS_FIX_ALTITUDE
-    bool altitude:1;
+    bool altitude NEOGPS_BF(1);
 #endif
 
 #ifdef GPS_FIX_SPEED
-    bool speed:1;
+    bool speed NEOGPS_BF(1);
 #endif
 
 #ifdef GPS_FIX_HEADING
-    bool heading:1;
+    bool heading NEOGPS_BF(1);
 #endif
 
 #ifdef GPS_FIX_SATELLITES
-    bool satellites:1;
+    bool satellites NEOGPS_BF(1);
 #endif
 
 #ifdef GPS_FIX_HDOP
-    bool hdop:1;
+    bool hdop NEOGPS_BF(1);
 #endif
 #ifdef GPS_FIX_VDOP
-    bool vdop:1;
+    bool vdop NEOGPS_BF(1);
 #endif
 #ifdef GPS_FIX_PDOP
-    bool pdop:1;
+    bool pdop NEOGPS_BF(1);
 #endif
 
 #ifdef GPS_FIX_LAT_ERR
-    bool lat_err:1;
+    bool lat_err NEOGPS_BF(1);
 #endif
 
 #ifdef GPS_FIX_LON_ERR
-    bool lon_err:1;
+    bool lon_err NEOGPS_BF(1);
 #endif
 
 #ifdef GPS_FIX_ALT_ERR
-    bool alt_err:1;
+    bool alt_err NEOGPS_BF(1);
 #endif
 
     void init()
@@ -253,7 +227,7 @@ public:
         for (uint8_t i=0; i<sizeof(*this); i++)
           *all++ |= *r_all++;
       }
-  } __attribute__((packed))
+  } NEOGPS_PACKED
       valid;
 
   /*
@@ -277,12 +251,6 @@ public:
     hdg.init();
 #endif
 
-#ifdef GPS_FIX_SATELLITES
-    satellites = 0;
-#endif
-
-    status = STATUS_NONE;
-
 #ifdef GPS_FIX_HDOP
     hdop = 0;
 #endif
@@ -302,6 +270,19 @@ public:
 #ifdef GPS_FIX_ALT_ERR
     alt_err_cm = 0;
 #endif
+
+#ifdef GPS_FIX_SATELLITES
+    satellites = 0;
+#endif
+
+#if defined(GPS_FIX_DATE) | defined(GPS_FIX_TIME)
+    dateTime = (clock_t) 0L;
+#endif
+#if defined(GPS_FIX_TIME)
+    dateTime_cs = 0;
+#endif
+
+    status = STATUS_NONE;
 
     valid.init();
   };
@@ -391,11 +372,12 @@ public:
         alt_err_cm = r.alt_err_cm;
 #endif
 
+      // Update all the valid flags
       valid |= r.valid;
 
       return *this;
     }
 
-} __attribute__((packed));
+} NEOGPS_PACKED;
 
 #endif

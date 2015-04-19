@@ -8,6 +8,7 @@
 #include "Cosa/IOBuffer.hh"
 #include "Cosa/IOStream/Driver/UART.hh"
 #include "Cosa/Power.hh"
+#include "Cosa/RTC.hh"
 
 #include "NMEAGPS.h"
 #include "Streamers.h"
@@ -27,6 +28,8 @@ protected:
   gps_fix safe_fix;
 
 public:
+    volatile uint32_t last_rx;
+
     /**
      * Constructor
      */
@@ -38,6 +41,7 @@ public:
      */
     virtual int putchar( char c )
     {
+      last_rx = RTC::millis();
       if (gps.decode(c) == NMEAGPS::DECODE_COMPLETED)
         Event::push( Event::RECEIVE_COMPLETED_TYPE, this );
       return c;
@@ -77,10 +81,6 @@ public:
 #endif
 
       if (newInterval) {
-
-        // Log the previous interval
-        traceIt();
-
         //  Since we're into the next time interval, we throw away
         //     all of the previous fix and start with what we
         //     just received.
@@ -95,45 +95,9 @@ public:
 
     //--------------------------
 
-    void traceIt()
+    void trace_it()
     {
-#if !defined(GPS_FIX_TIME) & !defined(PULSE_PER_DAY)
-      trace << seconds << ',';
-#endif
-
-      trace << merged;
-
-#if defined(NMEAGPS_PARSE_SATELLITES)
-      if (merged.valid.satellites) {
-        trace << ',' << '[';
-
-        // This is a little dangerous because gps.satellites is volatile.
-        // If you need to access the satellites array, be sure to
-        // use one of the mitigation techniques: is_safe+synchronized
-        // (as below) and copy a safe_array.
-        uint8_t i_max = merged.satellites;
-        if (i_max > NMEAGPS::MAX_SATELLITES)
-          i_max = NMEAGPS::MAX_SATELLITES;
-
-        for (uint8_t i=0; i < i_max; i++) {
-          trace << gps.satellites[i].id;
-#if defined(NMEAGPS_PARSE_SATELLITE_INFO)
-          trace << ' ' << 
-            gps.satellites[i].elevation << '/' << gps.satellites[i].azimuth;
-          trace << '@';
-          if (gps.satellites[i].tracked)
-            trace << gps.satellites[i].snr;
-          else
-            trace << '-';
-#endif
-          trace << ',';
-        }
-        trace << ']';
-      }
-#endif
-
-      trace << '\n';
-
+      trace_all( gps, merged );
     } // traceIt
 
     //--------------------------
@@ -168,6 +132,8 @@ UART uart1(1, &gps, &obuf);
 
 void setup()
 {
+  RTC::begin();
+
   // Start the normal trace output
   uart.begin(9600);
   trace.begin(&uart, PSTR("CosaNMEAEvent: started"));
@@ -186,6 +152,18 @@ void loop()
   Event event;
   while (Event::queue.dequeue( &event ))
     event.dispatch();
-    
+
+  // Print things out once per second, after the serial input has died down.
+  // This prevents input buffer overflow during printing.
+
+  static uint32_t last_trace = 0L;
+
+  if ((last_trace != seconds) && (RTC::millis() - gps.last_rx > 5)) {
+    last_trace = seconds;
+
+    // It's been 5ms since we received anything, log what we have so far...
+    gps.trace_it();
+  }
+
   Power::sleep();
 }

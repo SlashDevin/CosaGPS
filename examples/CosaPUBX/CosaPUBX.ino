@@ -29,6 +29,8 @@ UART uart1(1, &ibuf, &obuf);
  only pulse-per-second is available.
 #endif
 
+#elif !defined( NMEAGPS_PARSE_PUBX_00 ) & !defined( NMEAGPS_PARSE_PUBX_04 )
+#error PUBX_00 or PUBX_04 messages must be defined in PUBX.ino!
 #endif
 
 #if defined(GPS_FIX_DATE) & !defined(GPS_FIX_TIME)

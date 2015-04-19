@@ -43,6 +43,7 @@ void setup()
 void loop()
 {
   static uint32_t last_rx = 0L;
+  static gps_fix rmc_data;
 
   while (uart1.available()) {
     last_rx = RTC::millis();
@@ -55,9 +56,12 @@ void loop()
 #error NMEAGPS_PARSE_RMC must be defined in NMEAGPS.h!
 #endif
 
-      if (gps.nmeaMessage == NMEAGPS::NMEA_RMC)
+      if (gps.nmeaMessage == NMEAGPS::NMEA_RMC) {
+        rmc_data = gps.fix(); // copied for printing later...
+        
         //  Use received GPRMC sentence as a pulse
         seconds++;
+      }
     }
   }
 
@@ -70,7 +74,7 @@ void loop()
     last_trace = seconds;
 
     // It's been 5ms since we received anything, log what we have so far...
-    trace_all( gps, gps.fix() );
+    trace_all( gps, rmc_data );
   }
 
   Power::sleep();
