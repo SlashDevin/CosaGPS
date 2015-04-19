@@ -92,7 +92,7 @@ void setup()
 
   // Start the normal trace output
   uart.begin(9600);
-  trace.begin(&uart, PSTR("CosaNMEAfused: started"));
+  trace.begin(&uart, PSTR("CosaNMEAcoherent: started"));
   trace << PSTR("fix object size = ") << sizeof(gps.fix()) << endl;
   trace << PSTR("gps object size = ") << sizeof(gps) << endl;
 

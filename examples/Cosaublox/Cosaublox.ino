@@ -384,6 +384,7 @@ void loop()
 
   if ((gps.last_trace != seconds) &&
       (RTC::millis() - gps.last_rx > 5)) {
+
     // It's been 5ms since we received anything,
     // log what we have so far...
     gps.traceIt();

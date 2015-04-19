@@ -101,7 +101,7 @@ void setup()
 
   // Start the normal trace output
   uart.begin(9600);
-  trace.begin(&uart, PSTR("CosaUBXNMEA: started"));
+  trace.begin(&uart, PSTR("CosaPUBX: started"));
   trace << PSTR("fix object size = ") << sizeof(gps.fix()) << endl;
   trace << PSTR("gps object size = ") << sizeof(gps) << endl;
 

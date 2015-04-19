@@ -336,6 +336,6 @@ private:
     void sentenceUnrecognized();
     void headerReceived      ();
 
-} __attribute__((packed));
+} NEOGPS_PACKED;
 
 #endif

@@ -49,7 +49,11 @@ void loop()
     last_rx = RTC::millis();
 
     if (gps.decode( uart1.getchar() ) == NMEAGPS::DECODE_COMPLETED) {
-//      trace << (uint8_t) gps.nmeaMessage << ' ';
+
+//#ifdef NMEAGPS_SAVE_TALKER_ID
+//trace << gps.talker_id[0] << gps.talker_id[1] << ' ';
+//#endif
+//trace << (uint8_t) gps.nmeaMessage << ' ';
 
 // Make sure that the only sentence we care about is enabled
 #ifndef NMEAGPS_PARSE_RMC
